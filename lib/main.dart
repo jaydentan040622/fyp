@@ -1,6 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:fyp/transportation.dart';
 import 'accountModule/app.dart';
 import 'accountModule/firebase_options.dart';
 import 'home.dart';
