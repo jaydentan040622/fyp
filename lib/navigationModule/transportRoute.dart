@@ -74,10 +74,10 @@ class _TransportRoutesState extends State<TransportRoutes> {
               '&destination=${widget.destination.latitude},${widget.destination.longitude}'
               '&mode=transit'
               '&alternatives=true'
-              '&transit_mode=bus|subway|train|tram|rail'  // Specify all transit modes
-              '&transit_routing_preference=less_walking'  // Prefer routes with less walking
+              '&transit_mode=bus|subway|train|tram|rail'
+              '&transit_routing_preference=less_walking'
               '&language=en'
-              '&region=my'  // Set region to Malaysia
+              '&region=my'
               '&key=AIzaSyCnLmkL79qMenl0Sn7N4KN38RSoayv-_Bs'
       ));
 
@@ -89,6 +89,27 @@ class _TransportRoutesState extends State<TransportRoutes> {
             final legs = route['legs'][0];
             final steps = legs['steps'] as List;
             final transitSteps = steps.where((step) => step['travel_mode'] == 'TRANSIT').toList();
+            final walkingSteps = steps.where((step) => step['travel_mode'] == 'WALKING').toList();
+
+            // If it's a walking-only route, create a single walking step
+            if (transitSteps.isEmpty && walkingSteps.isNotEmpty) {
+              return {
+                'type': 'WALKING',
+                'route': 'Walking Route',
+                'duration': legs['duration']['text'],
+                'stops': 1,
+                'path': steps.map((step) => LatLng(step['start_location']['lat'], step['start_location']['lng'])).toList(),
+                'transitSteps': [
+                  {
+                    'vehicle_type': 'WALKING',
+                    'trip_time': legs['duration']['text'],
+                    'walking_distance': legs['distance']['text'],
+                    'departure_stop': 'Start',
+                    'arrival_stop': 'Destination',
+                  }
+                ],
+              };
+            }
 
             // Get detailed transit information
             String transportType = 'WALKING';
@@ -96,6 +117,25 @@ class _TransportRoutesState extends State<TransportRoutes> {
             String lineColor = '';
             String vehicleType = '';
             String vehicleName = '';
+
+            // Create route name from transport types
+            String routeName = transitSteps.map((step) {
+              final details = step['transit_details'];
+              final type = details['line']['vehicle']['type']?.toLowerCase() ?? '';
+              final line = details['line']['name'] ?? '';
+
+              if (type == 'subway') {
+                return line.contains('LRT') ? 'LRT' : 'MRT';
+              } else if (type == 'train') {
+                return 'KTM';
+              } else if (type == 'bus') {
+                return 'Bus';
+              } else if (type == 'tram') {
+                return 'Tram';
+              } else {
+                return type.toUpperCase();
+              }
+            }).join(' → ');
 
             if (transitSteps.isNotEmpty) {
               final transitDetails = transitSteps[0]['transit_details'];
@@ -125,21 +165,49 @@ class _TransportRoutesState extends State<TransportRoutes> {
 
             return {
               'type': transportType,
-              'route': lineName.isNotEmpty ? lineName : 'Route ${_routes.length + 1}',
+              'route': routeName.isNotEmpty ? routeName : 'Route ${_routes.length + 1}',
               'duration': legs['duration']['text'],
               'stops': transitSteps.length,
-              'price': 'Free', // You might want to get this from a different API
-              'schedule': 'Every 15 mins', // You might want to get this from a different API
               'path': steps.map((step) => LatLng(step['start_location']['lat'], step['start_location']['lng'])).toList(),
               'lineColor': lineColor,
               'vehicleName': vehicleName,
               'transitSteps': transitSteps.map((step) {
                 final details = step['transit_details'];
+                // Find walking steps before and after this transit step
+                final stepIndex = steps.indexOf(step);
+                final walkingBefore = stepIndex > 0 && steps[stepIndex - 1]['travel_mode'] == 'WALKING'
+                    ? steps[stepIndex - 1]
+                    : null;
+                final walkingAfter = stepIndex < steps.length - 1 && steps[stepIndex + 1]['travel_mode'] == 'WALKING'
+                    ? steps[stepIndex + 1]
+                    : null;
+
+                // Calculate number of stations to arrival
+                final numStops = details['num_stops'] ?? 0;
+
                 return {
                   'departure_stop': details['departure_stop']['name'],
                   'arrival_stop': details['arrival_stop']['name'],
                   'line_name': details['line']['name'],
                   'vehicle_type': details['line']['vehicle']['type'],
+                  'trip_time': step['duration']['text'],
+                  'stations_between': numStops,
+                  'walking_time': walkingBefore != null
+                      ? '${walkingBefore['duration']['text']}'
+                      : walkingAfter != null
+                      ? '${walkingAfter['duration']['text']}'
+                      : null,
+                  'walking_distance': walkingBefore != null
+                      ? walkingBefore['distance']['text']
+                      : walkingAfter != null
+                      ? walkingAfter['distance']['text']
+                      : null,
+                  'walking_from': walkingBefore != null
+                      ? walkingBefore['start_location']['name'] ?? 'Start'
+                      : details['departure_stop']['name'],
+                  'walking_to': walkingAfter != null
+                      ? walkingAfter['end_location']['name'] ?? 'Destination'
+                      : details['arrival_stop']['name'],
                 };
               }).toList(),
             };
@@ -163,66 +231,7 @@ class _TransportRoutesState extends State<TransportRoutes> {
       }
     } catch (e) {
       print('Error loading routes: $e');
-      // Fallback to mock data if API fails
-      _routes = [
-        {
-          'type': 'BUS',
-          'route': 'Route 1',
-          'duration': '25 mins',
-          'stops': 5,
-          'price': '\$2.50',
-          'schedule': 'Every 15 mins',
-          'path': [
-            LatLng(
-              widget.currentLocation.latitude,
-              widget.currentLocation.longitude,
-            ),
-            LatLng(
-              (widget.currentLocation.latitude + widget.destination.latitude) / 2,
-              (widget.currentLocation.longitude + widget.destination.longitude) / 2,
-            ),
-            widget.destination,
-          ],
-        },
-        {
-          'type': 'TRAIN',
-          'route': 'Route 2',
-          'duration': '15 mins',
-          'stops': 2,
-          'price': '\$3.50',
-          'schedule': 'Every 10 mins',
-          'path': [
-            LatLng(
-              widget.currentLocation.latitude,
-              widget.currentLocation.longitude,
-            ),
-            LatLng(
-              widget.currentLocation.latitude + 0.01,
-              widget.currentLocation.longitude + 0.01,
-            ),
-            widget.destination,
-          ],
-        },
-        {
-          'type': 'BUS + TRAIN',
-          'route': 'Route 3',
-          'duration': '20 mins',
-          'stops': 3,
-          'price': '\$4.00',
-          'schedule': 'Every 20 mins',
-          'path': [
-            LatLng(
-              widget.currentLocation.latitude,
-              widget.currentLocation.longitude,
-            ),
-            LatLng(
-              widget.destination.latitude - 0.01,
-              widget.destination.longitude - 0.01,
-            ),
-            widget.destination,
-          ],
-        },
-      ];
+      // Fallback if API fails
     } finally {
       setState(() {
         _isLoading = false;
@@ -331,7 +340,7 @@ class _TransportRoutesState extends State<TransportRoutes> {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           const Text(
-                            'Transportation Route',
+                            'Optichat',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: Colors.white,
@@ -398,26 +407,229 @@ class _TransportRoutesState extends State<TransportRoutes> {
                             horizontal: 16,
                             vertical: 8,
                           ),
-                          child: ListTile(
-                            leading: Icon(
-                              _getTransportIcon(route['type']),
-                              color: Colors.blue,
-                              size: 32,
-                            ),
-                            title: Text(route['route']),
-                            subtitle: Column(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Duration: ${route['duration']}'),
-                                Text('Stops: ${route['stops']}'),
-                                Text('Price: ${route['price']}'),
-                                Text('Schedule: ${route['schedule']}'),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      _getTransportIcon(route['type']),
+                                      color: Colors.blue,
+                                      size: 32,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            route['route'],
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Total: ${route['duration']}',
+                                            style: const TextStyle(
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.shade50,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        '${route['stops']} trips',
+                                        style: TextStyle(
+                                          color: Colors.blue.shade700,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                if (route['transitSteps'] != null && route['transitSteps'].isNotEmpty)
+                                  ...route['transitSteps'].map<Widget>((step) {
+                                    // For walking trips, show simplified view
+                                    if (step['vehicle_type'] == 'WALKING') {
+                                      return Padding(
+                                        padding: const EdgeInsets.only(bottom: 8),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 24,
+                                              height: 24,
+                                              decoration: BoxDecoration(
+                                                color: Colors.blue.shade50,
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Icon(
+                                                Icons.directions_walk,
+                                                size: 16,
+                                                color: Colors.blue,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: const Text(
+                                                          'Walking',
+                                                          style: TextStyle(
+                                                            fontWeight: FontWeight.w500,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                          vertical: 2,
+                                                        ),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.grey.shade100,
+                                                          borderRadius: BorderRadius.circular(8),
+                                                        ),
+                                                        child: Text(
+                                                          step['trip_time'] ?? '15 mins',
+                                                          style: TextStyle(
+                                                            color: Colors.grey.shade700,
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  Text(
+                                                    step['walking_distance'] ?? '500m',
+                                                    style: const TextStyle(
+                                                      color: Colors.grey,
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }
+
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 8),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            width: 24,
+                                            height: 24,
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue.shade50,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: Icon(
+                                              _getTransportIcon(step['vehicle_type']),
+                                              size: 16,
+                                              color: Colors.blue.shade700,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: Text(
+                                                        step['line_name'],
+                                                        style: const TextStyle(
+                                                          fontWeight: FontWeight.w500,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 2,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.grey.shade100,
+                                                        borderRadius: BorderRadius.circular(8),
+                                                      ),
+                                                      child: Text(
+                                                        step['trip_time'] ?? '15 mins',
+                                                        style: TextStyle(
+                                                          color: Colors.grey.shade700,
+                                                          fontSize: 12,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                Text(
+                                                  '${step['departure_stop']} → ${step['arrival_stop']}',
+                                                  style: const TextStyle(
+                                                    color: Colors.grey,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                                if (step['stations_between'] != null)
+                                                  Padding(
+                                                    padding: const EdgeInsets.only(top: 2),
+                                                    child: Text(
+                                                      '${step['stations_between']} stations to ${step['arrival_stop']}',
+                                                      style: TextStyle(
+                                                        color: Colors.grey.shade600,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                if (step['walking_time'] != null)
+                                                  Padding(
+                                                    padding: const EdgeInsets.only(top: 4),
+                                                    child: Row(
+                                                      children: [
+                                                        const Icon(
+                                                          Icons.directions_walk,
+                                                          size: 14,
+                                                          color: Colors.grey,
+                                                        ),
+                                                        const SizedBox(width: 4),
+                                                        Text(
+                                                          step['walking_time'],
+                                                          style: const TextStyle(
+                                                            color: Colors.grey,
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                const SizedBox(height: 8),
                               ],
                             ),
-                            isThreeLine: true,
-                            onTap: () {
-                              // TODO: Show detailed route view
-                            },
                           ),
                         );
                       },
