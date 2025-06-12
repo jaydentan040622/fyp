@@ -10,6 +10,6 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   runApp(const MyApp());
-  // if want to run home screen without login 
+  // if want to run home screen without login
   // runApp(const MaterialApp(home: HomeScreen()));
 }
