@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../home.dart';
+import 'caregiver_home.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -14,7 +15,10 @@ class _RegisterPageState extends State<RegisterPage> {
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _emergencyContactController = TextEditingController();
   bool _isLoading = false;
+  String _selectedUserType = 'blind_user'; // Default to blind user
 
   void _showSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
@@ -38,7 +42,13 @@ class _RegisterPageState extends State<RegisterPage> {
     if (_usernameController.text.trim().isEmpty ||
         _emailController.text.trim().isEmpty ||
         _passwordController.text.trim().isEmpty) {
-      _showSnackBar('Please fill in all fields', isError: true);
+      _showSnackBar('Please fill in all required fields', isError: true);
+      return;
+    }
+
+    // Validate emergency contact for blind users
+    if (_selectedUserType == 'blind_user' && _emergencyContactController.text.trim().isEmpty) {
+      _showSnackBar('Emergency contact is required for blind users', isError: true);
       return;
     }
 
@@ -56,13 +66,13 @@ class _RegisterPageState extends State<RegisterPage> {
       // Store additional user data in Firestore collection named "userprofile"
       final firestore = FirebaseFirestore.instance;
       
-      // Check if collection exists and create it if not
-      // Note: In Firestore, you don't need to explicitly create collections,
-      // they are created automatically when the first document is added
       await firestore.collection('userprofile').doc(userCredential.user!.uid).set({
         'username': _usernameController.text.trim(),
         'email': _emailController.text.trim(),
         'password': _passwordController.text.trim(), // Note: In production, never store plain text passwords
+        'phone': _phoneController.text.trim(),
+        'emergencyContact': _emergencyContactController.text.trim(),
+        'userType': _selectedUserType, // Store user type
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -73,13 +83,21 @@ class _RegisterPageState extends State<RegisterPage> {
         // Wait for snackbar to be visible
         await Future.delayed(const Duration(seconds: 1));
         
-        // Then navigate to home screen
+        // Navigate to appropriate home screen based on user type
         if (mounted) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
-            (route) => false,
-          );
+          if (_selectedUserType == 'caregiver') {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const CaregiverHomeScreen()),
+              (route) => false,
+            );
+          } else {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const HomeScreen()),
+              (route) => false,
+            );
+          }
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -116,6 +134,8 @@ class _RegisterPageState extends State<RegisterPage> {
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _phoneController.dispose();
+    _emergencyContactController.dispose();
     super.dispose();
   }
 
@@ -145,7 +165,104 @@ class _RegisterPageState extends State<RegisterPage> {
                     color: Color(0xFF2C3E50),
                   ),
                 ),
-                const SizedBox(height: 48),
+                const SizedBox(height: 32),
+
+                // User Type Selection
+                const Text(
+                  'I am a',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF2C3E50),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedUserType = 'blind_user'),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: _selectedUserType == 'blind_user' 
+                                ? const Color(0xFF2561FA) 
+                                : Colors.grey[200],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _selectedUserType == 'blind_user' 
+                                  ? const Color(0xFF2561FA) 
+                                  : Colors.grey.shade300,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.accessibility,
+                                color: _selectedUserType == 'blind_user' 
+                                    ? Colors.white 
+                                    : Colors.grey.shade600,
+                                size: 32,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Blind User',
+                                style: TextStyle(
+                                  color: _selectedUserType == 'blind_user' 
+                                      ? Colors.white 
+                                      : Colors.grey.shade600,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedUserType = 'caregiver'),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: _selectedUserType == 'caregiver' 
+                                ? const Color(0xFF2561FA) 
+                                : Colors.grey[200],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _selectedUserType == 'caregiver' 
+                                  ? const Color(0xFF2561FA) 
+                                  : Colors.grey.shade300,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.favorite,
+                                color: _selectedUserType == 'caregiver' 
+                                    ? Colors.white 
+                                    : Colors.grey.shade600,
+                                size: 32,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Caregiver',
+                                style: TextStyle(
+                                  color: _selectedUserType == 'caregiver' 
+                                      ? Colors.white 
+                                      : Colors.grey.shade600,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 32),
                 
                 // Username Field
                 const Text(
@@ -228,9 +345,67 @@ class _RegisterPageState extends State<RegisterPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
+
+                // Phone Field
+                const Text(
+                  'Phone Number (Optional)',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF2C3E50),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: TextField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      hintText: 'Enter Phone Number',
+                      prefixIcon: Icon(Icons.phone_outlined),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Emergency Contact Field (only for blind users)
+                if (_selectedUserType == 'blind_user') ...[
+                  const Text(
+                    'Emergency Contact *',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF2C3E50),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: TextField(
+                      controller: _emergencyContactController,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        hintText: 'Enter Emergency Contact Number',
+                        prefixIcon: Icon(Icons.emergency_outlined),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
                 
-                // Next Button
+                // Register Button
                 Container(
                   width: double.infinity,
                   height: 56,
@@ -250,7 +425,7 @@ class _RegisterPageState extends State<RegisterPage> {
                             ),
                           )
                         : const Text(
-                            'Next',
+                            'Register',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 16,
@@ -259,6 +434,7 @@ class _RegisterPageState extends State<RegisterPage> {
                           ),
                   ),
                 ),
+                const SizedBox(height: 24),
               ],
             ),
           ),

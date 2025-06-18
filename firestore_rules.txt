@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // User profile collection rules
+    match /userprofile/{userId} {
+      // Users can read and write their own profile
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow authenticated users to query profiles by email and userType for caregiver connection
+      allow read: if request.auth != null && 
+                     resource.data.userType == 'caregiver';
+    }
+    
+    // Caregiver connections collection
+    match /caregiverConnections/{connectionId} {
+      // Allow users to create connections where they are the user
+      allow create: if request.auth != null && 
+                       request.auth.uid == request.resource.data.userId;
+      
+      // Allow users to read/update connections where they are involved
+      allow read, update: if request.auth != null && 
+                             (request.auth.uid == resource.data.userId || 
+                              request.auth.uid == resource.data.caregiverId);
+    }
+    
+    // Notifications collection
+    match /notifications/{notificationId} {
+      // Allow users to create notifications for other users
+      allow create: if request.auth != null;
+      
+      // Allow users to read and update their own notifications
+      allow read, update: if request.auth != null && 
+                             request.auth.uid == resource.data.userId;
+    }
+    
+    // Emergency alerts collection
+    match /emergencyAlerts/{alertId} {
+      // Allow authenticated users to create emergency alerts
+      allow create: if request.auth != null && 
+                       request.auth.uid == request.resource.data.userId;
+      
+      // Allow caregivers to read alerts sent to them
+      allow read, update: if request.auth != null && 
+                             (request.auth.uid == resource.data.userId || 
+                              request.auth.uid == resource.data.caregiverId);
+    }
+    
+    // Route alerts collection
+    match /routeAlerts/{alertId} {
+      // Allow authenticated users to create route alerts
+      allow create: if request.auth != null && 
+                       request.auth.uid == request.resource.data.userId;
+      
+      // Allow caregivers to read alerts sent to them
+      allow read, update: if request.auth != null && 
+                             (request.auth.uid == resource.data.userId || 
+                              request.auth.uid == resource.data.caregiverId);
+    }
+    
+    // User locations collection
+    match /userLocations/{userId} {
+      // Users can read and write their own location
+      allow read, write: if request.auth != null && 
+                            request.auth.uid == userId;
+      
+      // Allow caregivers to read locations of their connected users
+      allow read: if request.auth != null && 
+                     exists(/databases/$(database)/documents/userprofile/$(userId)) &&
+                     get(/databases/$(database)/documents/userprofile/$(userId)).data.caregiverId == request.auth.uid;
+    }
+    
+    // Location history collection
+    match /locationHistory/{historyId} {
+      // Allow users to create their own location history
+      allow create: if request.auth != null && 
+                       request.auth.uid == request.resource.data.userId;
+      
+      // Allow users to read their own location history
+      allow read: if request.auth != null && 
+                     request.auth.uid == resource.data.userId;
+      
+      // Allow caregivers to read location history of their connected users
+      allow read: if request.auth != null && 
+                     exists(/databases/$(database)/documents/userprofile/$(resource.data.userId)) &&
+                     get(/databases/$(database)/documents/userprofile/$(resource.data.userId)).data.caregiverId == request.auth.uid;
+    }
+  }
+} 
