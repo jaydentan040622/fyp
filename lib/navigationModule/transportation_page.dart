@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'searchDestination.dart';
+import 'transportSchedule.dart';
 
 class TransportationPage extends StatelessWidget {
   const TransportationPage({super.key});
@@ -99,7 +100,7 @@ class TransportationPage extends StatelessWidget {
                       Expanded(
                         child: GestureDetector(
                           onTap: () {
-                            // TODO: Navigate to transport schedule
+                            Navigator.push(context, MaterialPageRoute(builder: (context) => TransportSchedule()));
                           },
                           child: SizedBox(
                             width: 280,
