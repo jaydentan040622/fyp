@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'caregiver_services.dart';
 import 'auth_gate.dart';
+import 'connection_requests_screen.dart';
 
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({Key? key}) : super(key: key);
@@ -382,6 +383,16 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
+  // View connection requests from caregivers
+  void _viewConnectionRequests() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ConnectionRequestsScreen(),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _usernameController.dispose();
@@ -678,6 +689,15 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: Colors.blue.shade700,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: _viewConnectionRequests,
+                icon: Icon(Icons.people, color: Colors.blue.shade700, size: 20),
+                label: const Text('View Requests'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.blue.shade700,
                 ),
               ),
             ],
