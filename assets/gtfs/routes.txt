@@ -1,0 +1,17 @@
+route_id,route_short_name,route_long_name,route_color
+KC05_KB18,Seremban Line,KTM Batu Caves - Pulau Sebang/Tampin,DC2420
+KA15_KD19,Port Klang Line,KTM Tanjung Malim - Pelabuhan Klang,DC2420
+100_47300,Padang Besar Line,KTM Butterworth - Padang Besar,018000
+100_9000,Ipoh Line,KTM Butterworth - Ipoh,1964B7
+SH,SH,Intercity Shuttle Tumpat - Gemas
+ERT,ERT,Intercity Ekspres Rakyat Timuran Tumpat - JB Sentral
+ES,ES,Intercity Ekspres Selatan Gemas - JB Sentral
+ST,ST,Intercity Shuttle Tebrau JB Sentral - Woodlands
+ETS,ETS,Electric Train Service Padang Besar - Gemas
+AG,AGL,LRT Ampang Line,e57200
+KJ,KJL,LRT Kelana Jaya Line,D50032
+PH,SPL,LRT Sri Petaling Line,76232f
+KGL,KGL,MRT Kajang Line,047940
+PYL,PYL,MRT Putrajaya Line,FFCD00
+MR,MRL,KL Monorail Line,84bd00
+BRT,BRT,BRT Sunway Line,115740,
