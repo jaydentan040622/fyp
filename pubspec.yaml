@@ -18,7 +18,7 @@ dependencies:
   shared_preferences: ^2.2.2
   http: ^1.1.0
   csv: ^5.0.0
-  google_ml_kit: ^0.16.3
+  google_ml_kit: ^0.20.0
   image_picker: ^1.0.7
   record: ^6.0.0
   just_audio: ^0.9.36

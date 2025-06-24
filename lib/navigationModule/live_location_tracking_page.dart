@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
+import 'package:speech_to_text/speech_to_text.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
 import 'accessibility_service.dart';
 
 class LiveLocationTrackingPage extends StatefulWidget {
@@ -28,12 +30,8 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
   bool _isTracking = false;
   bool _permissionGranted = false;
   List<LatLng> _currentRoute = [];
-  List<LatLng> _expectedRoute = [];
-  bool _routeDeviationEnabled = false;
-  double _maxDeviationDistance = 100.0;
   Timer? _locationUpdateTimer;
   Timer? _periodicAnnouncementTimer;
-  Timer? _voiceListeningTimer;
   
   // User Data
   String? _currentUserId;
@@ -41,7 +39,6 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
   
   // UI States
   bool _isLoading = true;
-  bool _showRoutePanel = false;
   bool _emergencyMode = false;
   bool _showAccessibilityPanel = false;
   
@@ -50,8 +47,11 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
   bool _accessibilityInitialized = false;
   
   // Voice Command States
-  bool _isListeningForCommands = false;
-  bool _continuousListening = true;
+  final SpeechToText _speechToText = SpeechToText();
+  bool _speechEnabled = false;
+  String _lastWords = '';
+  Timer? _voiceListeningTimer;
+  bool _isListening = false;
   
   @override
   void initState() {
@@ -73,10 +73,10 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _accessibilityInitialized) {
-      _startContinuousListening();
+    if (state == AppLifecycleState.resumed) {
+      _startListeningIfNeeded();
     } else if (state == AppLifecycleState.paused) {
-      _stopContinuousListening();
+      _stopListening();
     }
   }
 
@@ -93,15 +93,20 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
       // Initialize accessibility service first
       await _initializeAccessibilityService();
       
+      // Initialize speech recognition
+      await _initializeSpeech();
+      
       // Request permissions
       await _requestPermissions();
       
       // Get initial location
       await _getCurrentLocation();
       
-      // Start continuous listening and periodic announcements
-      _startContinuousListening();
+      // Start periodic announcements
       _startPeriodicAnnouncements();
+      
+      // Start listening for voice commands
+      _startListeningIfNeeded();
       
       if (mounted) {
         setState(() {
@@ -110,8 +115,7 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
         
         // Welcome message
         await _accessibilityService.speak(
-          'Live location tracking loaded. You can now use voice commands. '
-          'Say "help" for available commands or "start tracking" to begin.',
+          'Live location tracking loaded. You can now use voice commands. Say "Where am I" for your location, "Help" for emergency, or "Start" and "Stop" to control location sharing.',
           priority: true
         );
       }
@@ -125,6 +129,137 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
     }
   }
 
+  Future<void> _initializeSpeech() async {
+    try {
+      _speechEnabled = await _speechToText.initialize();
+      if (_speechEnabled) {
+        print('✅ Speech recognition initialized successfully');
+      } else {
+        print('❌ Speech recognition failed to initialize');
+      }
+    } catch (e) {
+      print('❌ Error initializing speech recognition: $e');
+      _speechEnabled = false;
+    }
+  }
+  
+  void _startListeningIfNeeded() {
+    if (!_isListening && _speechEnabled) {
+      _startListening();
+      
+      // Set up timer to restart listening periodically
+      _voiceListeningTimer?.cancel();
+      _voiceListeningTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+        if (!_isListening && _speechEnabled) {
+          _startListening();
+        }
+      });
+    }
+  }
+  
+  void _startListening() {
+    if (!_speechEnabled) return;
+    
+    try {
+      _speechToText.listen(
+        onResult: _onSpeechResult,
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 3),
+        partialResults: true,
+        onSoundLevelChange: (level) {
+          // Optional: Show visual feedback of sound level
+        },
+        cancelOnError: false,
+        listenMode: ListenMode.confirmation,
+      );
+      
+      setState(() {
+        _isListening = true;
+      });
+      
+      print('🎤 Started listening for voice commands...');
+    } catch (e) {
+      print('❌ Error starting speech recognition: $e');
+      setState(() {
+        _isListening = false;
+      });
+      
+      // Try again after a short delay
+      Future.delayed(const Duration(seconds: 2), () {
+        _startListeningIfNeeded();
+      });
+    }
+  }
+  
+  void _stopListening() {
+    _speechToText.stop();
+    setState(() {
+      _isListening = false;
+    });
+    _voiceListeningTimer?.cancel();
+    print('🛑 Stopped listening for voice commands.');
+  }
+  
+  void _onSpeechResult(SpeechRecognitionResult result) {
+    setState(() {
+      _lastWords = result.recognizedWords.toLowerCase();
+      print('🔊 Speech recognized: $_lastWords');
+    });
+    
+    if (result.finalResult) {
+      _handleVoiceCommand(_lastWords);
+      
+      // Restart listening after processing the command
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        _startListeningIfNeeded();
+      });
+    }
+  }
+  
+  void _handleVoiceCommand(String command) {
+    print('🎯 Processing voice command: "$command"');
+    
+    // Show visual feedback
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Voice command: $command'),
+        backgroundColor: Colors.blue,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    
+    if (command.contains('where am i')) {
+      _announceCurrentLocation();
+    } else if (command.contains('help') || command.contains('emergency')) {
+      _triggerEmergency();
+    } else if (command.contains('start')) {
+      _startLiveTracking();
+    } else if (command.contains('stop')) {
+      _stopLiveTracking();
+    } else {
+      // Unrecognized command
+      _accessibilityService.speak(
+        'Command not recognized. Please try again. Say "Where am I", "Help", "Start" or "Stop".',
+        priority: false
+      );
+    }
+  }
+  
+  void _announceCurrentLocation() async {
+    if (_currentPosition == null) {
+      _accessibilityService.speak('Getting your current location...', priority: true);
+      await _getCurrentLocation();
+    }
+    
+    if (_currentPosition != null) {
+      // Get address information if available
+      String locationMessage = 'Your current location is: Latitude ${_currentPosition!.latitude.toStringAsFixed(6)} and Longitude ${_currentPosition!.longitude.toStringAsFixed(6)}';
+      _accessibilityService.speak(locationMessage, priority: true);
+    } else {
+      _accessibilityService.speak('Unable to determine your current location. Please check your GPS settings.', priority: true);
+    }
+  }
+
   Future<void> _initializeAccessibilityService() async {
     try {
       print('🔄 Initializing accessibility services...');
@@ -133,16 +268,13 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
       // Wait a moment for the initialization to complete properly
       await Future.delayed(const Duration(milliseconds: 500));
       
-      // Set up voice command callbacks
-      _accessibilityService.setVoiceCommandCallback(_handleVoiceCommand);
-      
       _accessibilityInitialized = true;
       print('✅ Accessibility services initialized successfully');
       
       // Show a notification to indicate it's working
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Voice commands activated! Say "help" for available commands.'),
+          content: Text('Accessibility features activated!'),
           backgroundColor: Colors.green,
           duration: Duration(seconds: 4),
         ),
@@ -150,91 +282,8 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
       
     } catch (e) {
       print('❌ Failed to initialize accessibility service: $e');
-      _showErrorSnackBar('Voice commands may not work properly. Please restart the app.');
+      _showErrorSnackBar('Accessibility features may not work properly. Please restart the app.');
     }
-  }
-
-  void _handleVoiceCommand(String command) {
-    print('🎯 Handling voice command: "$command"');
-    
-    // Show visual feedback
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Voice command: $command'),
-        backgroundColor: Colors.blue,
-        duration: const Duration(seconds: 1),
-      ),
-    );
-    
-    switch (command) {
-      case 'start_tracking':
-        print('▶️ Starting live tracking');
-        _startLiveTracking();
-        break;
-      case 'stop_tracking':
-        print('⏹️ Stopping live tracking');
-        _stopLiveTracking();
-        break;
-      case 'emergency':
-        print('🚨 Triggering emergency');
-        _triggerEmergency();
-        break;
-      case 'set_route':
-        print('🔄 Toggling route panel');
-        _toggleRoutePanel();
-        break;
-      case 'status':
-        print('ℹ️ Announcing status');
-        _announceCurrentStatus();
-        break;
-      case 'help':
-        print('❓ Announcing help');
-        _announceHelp();
-        break;
-      case 'where_am_i':
-        print('🗺️ Announcing location');
-        _accessibilityService.speak('Retrieving your location...', priority: false);
-        _getCurrentLocation();
-        break;
-      default:
-        print('⚠️ Unknown command: $command');
-        _accessibilityService.speak('Command received: $command');
-        break;
-    }
-  }
-
-  void _startContinuousListening() {
-    if (!_accessibilityInitialized || !_continuousListening) {
-      print('Cannot start continuous listening: initialized=$_accessibilityInitialized, continuous=$_continuousListening');
-      return;
-    }
-    
-    print('🔁 Starting continuous listening service...');
-    _voiceListeningTimer?.cancel();
-    
-    // Start the first voice recognition immediately
-    _tryStartListening();
-    
-    // Then set up periodic attempts
-    _voiceListeningTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) async {
-      _tryStartListening();
-    });
-  }
-  
-  void _tryStartListening() async {
-    if (!_accessibilityService.isListening && mounted && _accessibilityInitialized) {
-      try {
-        print('🎯 Trying to start voice listening...');
-        await _accessibilityService.startListening();
-      } catch (e) {
-        print('❌ Error starting voice listening: $e');
-      }
-    }
-  }
-
-  void _stopContinuousListening() {
-    _voiceListeningTimer?.cancel();
-    _accessibilityService.stopListening();
   }
 
   void _startPeriodicAnnouncements() {
@@ -304,7 +353,13 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
         await _accessibilityService.speak('Location permissions granted.');
         
         // Request microphone permission for voice commands
-        await Permission.microphone.request();
+        var micStatus = await Permission.microphone.request();
+        if (micStatus.isGranted) {
+          await _accessibilityService.speak('Microphone permission granted for voice commands.');
+        } else {
+          await _accessibilityService.speak('Microphone permission denied. Voice commands will not work.');
+        }
+        
         await Permission.locationAlways.request();
       }
     } catch (e) {
@@ -401,7 +456,6 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
         print('📍 Position update received: lat=${position.latitude}, lng=${position.longitude}');
         _updateLocationOnMap(position);
         _saveLocationToFirebase(position);
-        _checkRouteDeviation(position);
         _accessibilityService.updateNavigationProgress(position);
       },
       onError: (error) {
@@ -498,65 +552,6 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
           
     } catch (e) {
       print('❌ Error saving location to Firebase: $e');
-    }
-  }
-
-  void _checkRouteDeviation(Position position) {
-    if (!_routeDeviationEnabled || _expectedRoute.isEmpty) return;
-    
-    double minDistance = double.infinity;
-    
-    for (LatLng expectedPoint in _expectedRoute) {
-      double distance = Geolocator.distanceBetween(
-        position.latitude,
-        position.longitude,
-        expectedPoint.latitude,
-        expectedPoint.longitude,
-      );
-      
-      if (distance < minDistance) {
-        minDistance = distance;
-      }
-    }
-    
-    if (minDistance > _maxDeviationDistance) {
-      _sendRouteDeviationAlert(position, minDistance);
-      _accessibilityService.announceRouteDeviation(minDistance);
-    }
-  }
-
-  Future<void> _sendRouteDeviationAlert(Position position, double deviation) async {
-    if (_currentUserId == null || _caregiverIds.isEmpty) return;
-    
-    try {
-      final alertData = {
-        'userId': _currentUserId,
-        'latitude': position.latitude,
-        'longitude': position.longitude,
-        'deviationDistance': deviation,
-        'maxAllowedDistance': _maxDeviationDistance,
-        'timestamp': FieldValue.serverTimestamp(),
-        'message': 'User has deviated ${deviation.toStringAsFixed(1)} meters from expected route',
-      };
-      
-      for (String caregiverId in _caregiverIds) {
-        await FirebaseFirestore.instance
-            .collection('routeAlerts')
-            .add({...alertData, 'caregiverId': caregiverId});
-        
-        await FirebaseFirestore.instance
-            .collection('notifications')
-            .add({
-              'userId': caregiverId,
-              'title': 'Route Deviation Alert',
-              'message': 'User has deviated from expected route',
-              'type': 'route_deviation',
-              'timestamp': FieldValue.serverTimestamp(),
-              'isRead': false,
-            });
-      }
-    } catch (e) {
-      print('Error sending route deviation alert: $e');
     }
   }
 
@@ -717,18 +712,6 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
     }
   }
 
-  void _toggleRoutePanel() {
-    setState(() {
-      _showRoutePanel = !_showRoutePanel;
-    });
-    
-    if (_showRoutePanel) {
-      _accessibilityService.speak('Route settings panel opened. You can now set your expected route by tapping on the map.');
-    } else {
-      _accessibilityService.speak('Route settings panel closed.');
-    }
-  }
-
   void _toggleAccessibilityPanel() {
     setState(() {
       _showAccessibilityPanel = !_showAccessibilityPanel;
@@ -741,57 +724,11 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
     }
   }
 
-  void _onMapTapped(LatLng position) {
-    if (_showRoutePanel && !_routeDeviationEnabled) {
-      setState(() {
-        _expectedRoute.add(position);
-        
-        _markers.add(
-          Marker(
-            markerId: MarkerId('route_point_${_expectedRoute.length}'),
-            position: position,
-            infoWindow: InfoWindow(title: 'Route Point ${_expectedRoute.length}'),
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-          ),
-        );
-        
-        if (_expectedRoute.length > 1) {
-          _polylines.removeWhere((polyline) => polyline.polylineId.value == 'expected_route');
-          _polylines.add(
-            Polyline(
-              polylineId: const PolylineId('expected_route'),
-              points: _expectedRoute,
-              color: Colors.green,
-              width: 3,
-              patterns: [PatternItem.dash(20), PatternItem.gap(10)],
-            ),
-          );
-        }
-      });
-      
-      _accessibilityService.speak('Route point ${_expectedRoute.length} added.');
-    }
-  }
-
-  void _activateRouteDeviation() {
-    if (_expectedRoute.length < 2) {
-      _accessibilityService.speak('Please set at least 2 route points before activating route monitoring.');
-      return;
-    }
-    
-    setState(() {
-      _routeDeviationEnabled = true;
-      _showRoutePanel = false;
-    });
-    
-    _accessibilityService.announceNavigationStart(_expectedRoute);
-  }
-
   void _announceCurrentStatus() {
     String status = 'Current status: ';
     status += _permissionGranted ? 'GPS enabled. ' : 'GPS disabled. ';
     status += _isTracking ? 'Tracking active. ' : 'Tracking inactive. ';
-    status += _routeDeviationEnabled ? 'Route monitoring active. ' : 'Route monitoring inactive. ';
+    status += _speechEnabled ? 'Voice commands active. ' : 'Voice commands disabled. ';
     
     if (_caregiverIds.isNotEmpty) {
       status += '${_caregiverIds.length} caregiver${_caregiverIds.length > 1 ? 's' : ''} connected.';
@@ -800,21 +737,6 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
     }
     
     _accessibilityService.speak(status, priority: true);
-  }
-
-  void _announceHelp() {
-    const helpText = 'Available voice commands: '
-        'Say "start tracking" to begin location sharing. '
-        'Say "stop tracking" to stop sharing. '
-        'Say "emergency" or "help" for immediate assistance. '
-        'Say "where am I" for current location. '
-        'Say "what direction" for compass direction. '
-        'Say "status" for current system status. '
-        'Say "set route" to configure expected path. '
-        'Say "repeat" to hear the last announcement again. '
-        'Say "quiet" to disable voice feedback, or "speak" to enable it.';
-    
-    _accessibilityService.speak(helpText, priority: true);
   }
 
   void _showSuccessSnackBar(String message) {
@@ -896,7 +818,6 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
                   onMapCreated: (GoogleMapController controller) {
                     _mapController = controller;
                   },
-                  onTap: _onMapTapped,
                   markers: _markers,
                   polylines: _polylines,
                   circles: _circles,
@@ -931,12 +852,7 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
                           _buildLargeStatusIndicator(
                             icon: Icons.mic,
                             label: 'Voice',
-                            isActive: _accessibilityService.isListening,
-                          ),
-                          _buildLargeStatusIndicator(
-                            icon: Icons.route,
-                            label: 'Route',
-                            isActive: _routeDeviationEnabled,
+                            isActive: _isListening,
                           ),
                         ],
                       ),
@@ -944,85 +860,30 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
                   ),
                 ),
                 
-                // Route settings panel
-                if (_showRoutePanel)
+                // Voice command indicator
+                if (_isListening)
                   Positioned(
-                    bottom: 100,
-                    left: 16,
-                    right: 16,
-                    child: Card(
-                      elevation: 8,
-                      child: Padding(
-                        padding: const EdgeInsets.all(20.0),
-                        child: Column(
+                    top: 100,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.8),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Row(
                           mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
+                            Icon(Icons.mic, color: Colors.white),
+                            SizedBox(width: 8),
                             Text(
-                              'Route Deviation Settings',
-                              style: Theme.of(context).textTheme.headlineSmall,
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 20),
-                            Text(
-                              'Max deviation: ${_maxDeviationDistance.toInt()}m',
-                              style: const TextStyle(fontSize: 18),
-                            ),
-                            Slider(
-                              value: _maxDeviationDistance,
-                              min: 50,
-                              max: 500,
-                              divisions: 9,
-                              label: '${_maxDeviationDistance.toInt()}m',
-                              onChanged: (value) {
-                                setState(() {
-                                  _maxDeviationDistance = value;
-                                });
-                                _accessibilityService.speak('Deviation distance set to ${value.toInt()} meters');
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Route points: ${_expectedRoute.length}',
-                              style: const TextStyle(fontSize: 18),
-                            ),
-                            const SizedBox(height: 20),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: ElevatedButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        _expectedRoute.clear();
-                                        _routeDeviationEnabled = false;
-                                        _markers.removeWhere((marker) => 
-                                          marker.markerId.value.startsWith('route_point_'));
-                                        _polylines.removeWhere((polyline) => 
-                                          polyline.polylineId.value == 'expected_route');
-                                      });
-                                      _accessibilityService.speak('Route cleared. Tap on the map to set new route points.');
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                      minimumSize: const Size(0, 50),
-                                      textStyle: const TextStyle(fontSize: 16),
-                                    ),
-                                    child: const Text('Clear Route'),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: ElevatedButton(
-                                    onPressed: _expectedRoute.length >= 2 ? _activateRouteDeviation : null,
-                                    style: ElevatedButton.styleFrom(
-                                      minimumSize: const Size(0, 50),
-                                      textStyle: const TextStyle(fontSize: 16),
-                                      backgroundColor: Colors.green,
-                                      foregroundColor: Colors.white,
-                                    ),
-                                    child: const Text('Activate'),
-                                  ),
-                                ),
-                              ],
+                              'Listening...',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ],
                         ),
@@ -1095,27 +956,35 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
                               },
                             ),
                             
-                            // Continuous Listening Toggle
+                            // Voice Commands Toggle
                             SwitchListTile(
-                              title: const Text('Continuous Voice Commands', style: TextStyle(fontSize: 18)),
-                              value: _continuousListening,
+                              title: const Text('Voice Commands', style: TextStyle(fontSize: 18)),
+                              value: _speechEnabled,
                               onChanged: (value) {
-                                setState(() {
-                                  _continuousListening = value;
-                                });
                                 if (value) {
-                                  _startContinuousListening();
-                                  _accessibilityService.speak('Continuous voice commands enabled');
+                                  _initializeSpeech().then((_) {
+                                    _startListeningIfNeeded();
+                                  });
                                 } else {
-                                  _stopContinuousListening();
-                                  _accessibilityService.speak('Continuous voice commands disabled');
+                                  _stopListening();
+                                  setState(() {
+                                    _speechEnabled = false;
+                                  });
                                 }
                               },
                             ),
                             
                             const SizedBox(height: 16),
                             ElevatedButton(
-                              onPressed: _announceHelp,
+                              onPressed: () {
+                                _accessibilityService.speak(
+                                  'Available voice commands: Say "Where am I" to hear your current location. '
+                                  'Say "Help" for emergency assistance. '
+                                  'Say "Start" to begin location sharing. '
+                                  'Say "Stop" to stop location sharing.',
+                                  priority: true
+                                );
+                              },
                               style: ElevatedButton.styleFrom(
                                 minimumSize: const Size(0, 50),
                                 textStyle: const TextStyle(fontSize: 16),
@@ -1148,20 +1017,6 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
           ),
           const SizedBox(height: 16),
           
-          // Route settings button
-          SizedBox(
-            width: 70,
-            height: 70,
-            child: FloatingActionButton(
-              heroTag: "route",
-              onPressed: _toggleRoutePanel,
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-              child: const Icon(Icons.route, size: 30),
-            ),
-          ),
-          const SizedBox(height: 16),
-          
           // Location refresh button
           SizedBox(
             width: 70,
@@ -1172,6 +1027,21 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
               backgroundColor: const Color(0xFF2561FA),
               foregroundColor: Colors.white,
               child: const Icon(Icons.my_location, size: 30),
+            ),
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Voice command button
+          SizedBox(
+            width: 70,
+            height: 70,
+            child: FloatingActionButton(
+              heroTag: "voice",
+              onPressed: _isListening ? _stopListening : _startListeningIfNeeded,
+              backgroundColor: _isListening ? Colors.green : Colors.blue,
+              foregroundColor: Colors.white,
+              child: Icon(_isListening ? Icons.mic : Icons.mic_none, size: 30),
             ),
           ),
         ],
