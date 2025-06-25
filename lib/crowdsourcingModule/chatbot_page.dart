@@ -25,13 +25,13 @@ class _ChatbotPageState extends State<ChatbotPage> {
   bool _isTyping = false;
   bool _isListening = false;
   bool _isLoadingHistory = true;
-  bool _isExporting = false;
   
-//deepseek/deepseek-r1:free
-  // final String _apiKey = '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';
-  final String _apiKey = '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';
-
-  final String _model = 'deepseek/deepseek-r1:free';
+  // Maximum number of messages to include in context
+  final int _maxContextMessages = 10;
+  
+  // Gemini API Configuration
+  final String _apiKey = 'AIzaSyA-aoTz99SRfSdyy0Q2Slb8JsgUZ2oXwm8';
+  final String _modelName = 'gemini-1.5-flash';  // Updated to a supported model
 
   // Accessibility features
   late FlutterTts _flutterTts;
@@ -128,62 +128,6 @@ class _ChatbotPageState extends State<ChatbotPage> {
       });
     } catch (e) {
       print('Error saving message to Firestore: $e');
-    }
-  }
-  
-  // Export chat history to a text file and share
-  Future<void> _exportChatHistory() async {
-    if (_messages.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No messages to export')),
-      );
-      return;
-    }
-    
-    setState(() {
-      _isExporting = true;
-    });
-    
-    try {
-      final now = DateTime.now();
-      final formatter = DateFormat('yyyy-MM-dd_HH-mm');
-      final fileName = 'chat_history_${formatter.format(now)}.txt';
-      
-      // Prepare content
-      final buffer = StringBuffer();
-      buffer.writeln('Optichat AI Assistant - Chat History');
-      buffer.writeln('Exported on: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(now)}');
-      buffer.writeln('-------------------------------------------');
-      buffer.writeln();
-      
-      for (var message in _messages) {
-        final prefix = message.isUser ? 'You: ' : 'Assistant: ';
-        buffer.writeln('$prefix${message.text}');
-        buffer.writeln();
-      }
-      
-      // Get temporary directory
-      final directory = await getTemporaryDirectory();
-      final filePath = '${directory.path}/$fileName';
-      
-      // Write to file
-      final file = File(filePath);
-      await file.writeAsString(buffer.toString());
-      
-      // Share file
-      await Share.shareXFiles(
-        [XFile(filePath)],
-        text: 'My chat history with Optichat AI Assistant',
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error exporting chat history: $e')),
-      );
-      print('Error exporting chat history: $e');
-    } finally {
-      setState(() {
-        _isExporting = false;
-      });
     }
   }
 
@@ -287,21 +231,6 @@ class _ChatbotPageState extends State<ChatbotPage> {
         backgroundColor: const Color(0xFF2561FA),
         foregroundColor: Colors.white,
         actions: [
-          // Export button
-          IconButton(
-            onPressed: _isExporting ? null : _exportChatHistory,
-            tooltip: 'Export Chat History',
-            icon: _isExporting 
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
-                  ),
-                )
-              : const Icon(Icons.download),
-          ),
           // Clear history button 
           IconButton(
             onPressed: _messages.isEmpty ? null : () {
@@ -514,8 +443,8 @@ class _ChatbotPageState extends State<ChatbotPage> {
     _messageController.clear();
 
     try {
-      // API call for faster response
-      final response = await _getAIResponse(userMessage);
+      // Get response with context awareness
+      final response = await _getGeminiResponse(userMessage);
       
       setState(() {
         _isTyping = false;
@@ -534,38 +463,68 @@ class _ChatbotPageState extends State<ChatbotPage> {
     }
   }
 
-  Future<String> _getAIResponse(String userMessage) async {
-    final uri = Uri.parse('https://openrouter.ai/api/v1/chat/completions');
+  Future<String> _getGeminiResponse(String userMessage) async {
+    // Simpler approach: just send the current message and system instruction
+    final apiUrl = 'https://generativelanguage.googleapis.com/v1/models/$_modelName:generateContent?key=$_apiKey';
     
     try {
-      // Enhanced API call for faster responses
+      // Create a simpler request format for better compatibility
+      final Map<String, dynamic> requestBody = {
+        'contents': [
+          {
+            'role': 'user',
+            'parts': [
+              {
+                'text': 'You are a helpful assistant for blind and visually impaired users. Please provide clear and concise responses. The user says: $userMessage'
+              }
+            ]
+          }
+        ],
+        'generationConfig': {
+          'temperature': 0.7,
+          'maxOutputTokens': 800,
+          'topP': 0.95,
+          'topK': 40
+        }
+      };
+      
+      // Make the API request
       final response = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_apiKey',
-          'HTTP-Referer': 'optichat-app.com',
-          'X-Title': 'Optichat'
-        },
-        body: jsonEncode({
-          'model': _model,
-          'messages': [
-            {'role': 'user', 'content': userMessage}
-          ],
-          'temperature': 0.7, // Lower for more focused responses
-          'max_tokens': 150, // Limit response length for speed
-          'stream': false // Non-streaming for simpler implementation
-        }),
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(requestBody),
       );
-
+      
+      print('Response status: ${response.statusCode}');
+      print('Response body: ${response.body}');
+      
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['choices'][0]['message']['content'];
+        
+        try {
+          // Extract text from the response
+          if (data['candidates'] != null && 
+              data['candidates'].isNotEmpty && 
+              data['candidates'][0]['content'] != null &&
+              data['candidates'][0]['content']['parts'] != null && 
+              data['candidates'][0]['content']['parts'].isNotEmpty) {
+            
+            return data['candidates'][0]['content']['parts'][0]['text'];
+          } else {
+            print('Unexpected response structure: $data');
+            return "I couldn't understand your request. Please try again.";
+          }
+        } catch (e) {
+          print('Error parsing response: $e');
+          return "Sorry, I encountered an error processing your request.";
+        }
       } else {
-        throw Exception('Failed to get response: ${response.statusCode}');
+        print('API error: ${response.statusCode}, ${response.body}');
+        throw Exception('API error: ${response.statusCode}');
       }
     } catch (e) {
-      throw Exception('Error communicating with AI service: $e');
+      print('Error calling Gemini API: $e');
+      return "Sorry, I couldn't connect to my knowledge database. Please check your internet connection and try again.";
     }
   }
 
