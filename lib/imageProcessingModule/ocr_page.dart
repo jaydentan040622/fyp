@@ -38,7 +38,34 @@ class _OCRPageState extends State<OCRPage> {
     final textRecognizer = GoogleMlKit.vision.textRecognizer();
     try {
       final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
-      extractedText = recognizedText.text;
+      // Arrange output paragraph by paragraph (block by block)
+      final List<TextBlock> blocks = List<TextBlock>.from(recognizedText.blocks);
+      // Sort blocks by top (y)
+      blocks.sort((a, b) => a.boundingBox.top.compareTo(b.boundingBox.top));
+      final buffer = StringBuffer();
+      for (final block in blocks) {
+        // Sort lines in block by top (y), then left (x)
+        final lines = List<TextLine>.from(block.lines);
+        lines.sort((a, b) {
+          final ay = a.boundingBox.top;
+          final by = b.boundingBox.top;
+          if ((ay - by).abs() < 10) {
+            return a.boundingBox.left.compareTo(b.boundingBox.left);
+          }
+          return ay.compareTo(by);
+        });
+        for (final line in lines) {
+          final elements = List<TextElement>.from(line.elements);
+          elements.sort((a, b) => a.boundingBox.left.compareTo(b.boundingBox.left));
+          for (final element in elements) {
+            buffer.write(element.text);
+            buffer.write(' ');
+          }
+          buffer.write('\n');
+        }
+        buffer.write('\n'); // Double newline between paragraphs
+      }
+      extractedText = buffer.toString().trim();
     } catch (e) {
       extractedText = 'Error recognizing text: ${e.toString()}';
     } finally {
