@@ -33,8 +33,6 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("FlutterTtsPlugin"));
   GeolocatorWindowsRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("GeolocatorWindows"));
-  RecordWindowsPluginCApiRegisterWithRegistrar(
-      registry->GetRegistrarForPlugin("RecordWindowsPluginCApi"));
   PermissionHandlerWindowsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("PermissionHandlerWindowsPlugin"));
   RecordWindowsPluginCApiRegisterWithRegistrar(

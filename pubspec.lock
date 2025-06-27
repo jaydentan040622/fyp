@@ -41,6 +41,46 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.2"
+  camera:
+    dependency: "direct main"
+    description:
+      name: camera
+      sha256: dfa8fc5a1adaeb95e7a54d86a5bd56f4bb0e035515354c8ac6d262e35cec2ec8
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.10.6"
+  camera_android:
+    dependency: transitive
+    description:
+      name: camera_android
+      sha256: "08808be7e26fc3c7426c81b3fa387564b8e9c22e6fe9cb5675ce3ab7017d8203"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.10.10+3"
+  camera_avfoundation:
+    dependency: transitive
+    description:
+      name: camera_avfoundation
+      sha256: "71dacf6c30aee386617c2b72ad46517706f8ef625aa637313c0d4dc93ddd8d76"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.9.20+1"
+  camera_platform_interface:
+    dependency: transitive
+    description:
+      name: camera_platform_interface
+      sha256: "2f757024a48696ff4814a789b0bd90f5660c0fb25f393ab4564fb483327930e2"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.10.0"
+  camera_web:
+    dependency: transitive
+    description:
+      name: camera_web
+      sha256: "595f28c89d1fb62d77c73c633193755b781c6d2e0ebcd8dc25b763b514e6ba8f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.5"
   characters:
     dependency: transitive
     description:
@@ -477,6 +517,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.2.5"
+  google_generative_ai:
+    dependency: "direct main"
+    description:
+      name: google_generative_ai
+      sha256: "3a51ed314e596ddee9654ab9f1372fff0b8f3917be937655bcadebd5fa063df0"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.3"
   google_maps:
     dependency: transitive
     description:
@@ -521,10 +569,10 @@ packages:
     dependency: transitive
     description:
       name: google_maps_flutter_web
-      sha256: a9822dbf31a3f76f239f6bda346511b051d3edf739806e9091be2729e8b645de
+      sha256: ce2cac714e5462bf761ff2fdfc3564c7e5d7ed0578268dccb0a54dbdb1e6214e
       url: "https://pub.dev"
     source: hosted
-    version: "0.5.12+1"
+    version: "0.5.12+2"
   google_ml_kit:
     dependency: "direct main"
     description:
@@ -1025,10 +1073,10 @@ packages:
     dependency: transitive
     description:
       name: record_linux
-      sha256: "29e7735b05c1944bb6c9b72a36c08d4a1b24117e712d6a9523c003bde12bf484"
+      sha256: "0626678a092c75ce6af1e32fe7fd1dea709b92d308bc8e3b6d6348e2430beb95"
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.0"
+    version: "1.1.1"
   record_macos:
     dependency: transitive
     description:
