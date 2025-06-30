@@ -320,8 +320,8 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
     // Cancel existing timer if any
     _captureTimer?.cancel();
     
-    // Take a frame every 5 seconds
-    _captureTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    // Take a frame every 3 seconds (changed from 5 seconds)
+    _captureTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!_isDetecting && _cameraController != null && _cameraController!.value.isInitialized) {
         _captureAndAnalyzeFrame();
       }
@@ -370,18 +370,16 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
       // Read the image file
       final imageBytes = File(imagePath).readAsBytesSync();
       
-      // Create a detailed prompt for image analysis
+      // Create a detailed prompt for image analysis with shortened output request
       final prompt = """
-Analyze this image and describe what you see in detail. 
-Include:
-- Main objects and people
-- Actions taking place
-- Environmental details
+Analyze this image briefly and concisely. 
+Include only:
+- Key objects and people
 - Any text visible in the image
-- Potential hazards or obstacles
+- Important hazards or obstacles
 
-Keep the description concise and accessible for visually impaired users. 
-Prioritize important information that would help someone navigate their surroundings.
+Use short, direct sentences. Limit to 2-3 sentences maximum.
+Prioritize safety information for visually impaired users.
       """;
       
       // Create multi-part content with text and image
@@ -392,12 +390,12 @@ Prioritize important information that would help someone navigate their surround
         ])
       ];
       
-      // Set generation config for more controlled output
+      // Set generation config for more controlled output with reduced token length
       final generationConfig = GenerationConfig(
         temperature: 0.4,
         topK: 32,
         topP: 1,
-        maxOutputTokens: 200,
+        maxOutputTokens: 100, // Reduced from 200 to get shorter responses
       );
       
       // Generate content with the model
