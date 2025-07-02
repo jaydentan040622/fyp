@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'saved_audio.dart';
 
@@ -52,6 +53,25 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
       return transcript;
     } else {
       throw Exception('Failed to transcribe audio: \\n${response.body}');
+    }
+  }
+
+  Future<String?> uploadAudioToSupabase(File audioFile, String fileName) async {
+    final supabase = Supabase.instance.client;
+    try {
+      final String filePath = 'recordings/$fileName.wav';
+      final response = await supabase.storage
+          .from('voice-note') // your bucket name
+          .upload(filePath, audioFile);
+
+      // If upload is successful, get the public URL
+      final publicUrl = supabase.storage
+          .from('voice-note')
+          .getPublicUrl(filePath);
+      return publicUrl;
+    } catch (e) {
+      print('Upload error: $e');
+      return null;
     }
   }
 
@@ -136,13 +156,19 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
         return;
       }
       final transcript = await transcribeAudio(audioFile);
-      await FirebaseFirestore.instance.collection('voice_notes').add({
-        'email': user.email,
-        'file_name': fileName,
-        'transcript': transcript,
-        'created_at': FieldValue.serverTimestamp(),
-      });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transcript saved!')));
+      final audioUrl = await uploadAudioToSupabase(audioFile, fileName);
+      if (audioUrl != null) {
+        await FirebaseFirestore.instance.collection('voice_notes').add({
+          'email': user.email,
+          'file_name': fileName,
+          'audio_url': audioUrl, // Save the URL
+          'transcript': transcript,
+          'created_at': FieldValue.serverTimestamp(),
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transcript and audio saved!')));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Audio upload failed.')));
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
