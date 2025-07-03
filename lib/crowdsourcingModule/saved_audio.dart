@@ -192,6 +192,14 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         _isPlaying = state.playing;
       });
     });
+    _player.processingStateStream.listen((processingState) {
+      if (processingState == ProcessingState.completed) {
+        setState(() {
+          _isPlaying = false;
+        });
+        _player.seek(Duration.zero); // Reset to start
+      }
+    });
   }
 
   @override
