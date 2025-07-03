@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  app_links
   cloud_firestore
   desktop_webview_auth
   file_selector_windows
@@ -10,7 +11,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   firebase_core
   flutter_tts
   geolocator_windows
-  record_windows
   permission_handler_windows
   record_windows
   share_plus
