@@ -6,6 +6,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:flutter_tts/flutter_tts.dart';
 
 class SearchDestination extends StatefulWidget {
   const SearchDestination({super.key});
@@ -27,11 +28,42 @@ class _SearchDestinationState extends State<SearchDestination> {
   static const String _apiKey = 'AIzaSyCnLmkL79qMenl0Sn7N4KN38RSoayv-_Bs'; // Replace with your API key
   static const double _searchRadius = 5000; // 5km radius
 
+  // Text-to-speech instance
+  final FlutterTts flutterTts = FlutterTts();
+  bool _isSpeaking = false;
+
   @override
   void initState() {
     super.initState();
     _loadRecentSearches();
     _initializeLocation();
+    _initializeTts();
+  }
+
+  Future<void> _initializeTts() async {
+    await flutterTts.setLanguage("en-US");
+    await flutterTts.setSpeechRate(0.3); // Slower speech rate
+    await flutterTts.setVolume(1.0);
+    await flutterTts.setPitch(1.0);
+
+    flutterTts.setStartHandler(() {
+      setState(() {
+        _isSpeaking = true;
+      });
+    });
+
+    flutterTts.setCompletionHandler(() {
+      setState(() {
+        _isSpeaking = false;
+      });
+    });
+
+    flutterTts.setErrorHandler((msg) {
+      setState(() {
+        _isSpeaking = false;
+      });
+      print("TTS Error: $msg");
+    });
   }
 
   Future<void> _loadRecentSearches() async {
@@ -286,6 +318,9 @@ class _SearchDestinationState extends State<SearchDestination> {
           // Get current position
           final position = await _getCurrentPosition();
           if (position != null && mounted) {
+            // Speak destination information
+            await _speakDestinationInfo(name);
+
             // Navigate to transport routes
             Navigator.push(
               context,
@@ -303,6 +338,37 @@ class _SearchDestinationState extends State<SearchDestination> {
     } catch (e) {
       print('Error getting place details: $e');
     }
+  }
+
+  Future<void> _speakDestinationInfo(String destinationName) async {
+    final speechText = "Searching for routes to $destinationName. Please wait while I find the best transportation options for you.";
+    await flutterTts.speak(speechText);
+  }
+
+  Future<void> _speakRouteSummary(List<Map<String, dynamic>> routes) async {
+    if (routes.isEmpty) {
+      await flutterTts.speak("No routes found to your destination. Please try a different location or transportation mode.");
+      return;
+    }
+
+    String speechText = "I found ${routes.length} route options to your destination. ";
+
+    for (int i = 0; i < routes.length && i < 3; i++) {
+      final route = routes[i];
+      final routeNumber = i + 1;
+      final duration = route['duration'] ?? 'unknown time';
+      final routeName = route['route'] ?? 'Route $routeNumber';
+
+      speechText += "Route $routeNumber: $routeName, takes about $duration. ";
+    }
+
+    if (routes.length > 3) {
+      speechText += "There are ${routes.length - 3} more route options available. ";
+    }
+
+    speechText += "Please select your preferred route from the list below.";
+
+    await flutterTts.speak(speechText);
   }
 
   void _onSearchChanged(String value) {

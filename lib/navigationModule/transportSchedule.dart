@@ -6,6 +6,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:csv/csv.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'dart:typed_data';
+import 'package:flutter_tts/flutter_tts.dart';
 
 class TransportSchedule extends StatefulWidget {
   const TransportSchedule({Key? key}) : super(key: key);
@@ -23,12 +24,42 @@ class _TransportScheduleState extends State<TransportSchedule> {
   Map<String, String> _lineStatus = {};
   Map<String, String> _lineDisruptionMsg = {};
 
+  // Text-to-speech instance
+  final FlutterTts flutterTts = FlutterTts();
+  bool _isSpeaking = false;
+
   @override
   void initState() {
     super.initState();
+    _initializeTts();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadGTFSData();
-      _fetchPrasaranaDisruptions();
+    });
+  }
+
+  Future<void> _initializeTts() async {
+    await flutterTts.setLanguage("en-US");
+    await flutterTts.setSpeechRate(0.3); // Slower speech rate
+    await flutterTts.setVolume(1.0);
+    await flutterTts.setPitch(1.0);
+
+    flutterTts.setStartHandler(() {
+      setState(() {
+        _isSpeaking = true;
+      });
+    });
+
+    flutterTts.setCompletionHandler(() {
+      setState(() {
+        _isSpeaking = false;
+      });
+    });
+
+    flutterTts.setErrorHandler((msg) {
+      setState(() {
+        _isSpeaking = false;
+      });
+      print("TTS Error: $msg");
     });
   }
 
@@ -127,7 +158,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
           if (minHeadway == maxHeadway) {
             frequencyStr = 'Every ${_formatHeadway(minHeadway)}';
           } else {
-            frequencyStr = 'Every ${_formatHeadway(minHeadway)} - ${_formatHeadway(maxHeadway)}';
+            frequencyStr = 'Every ${_formatHeadway(minHeadway)} to ${_formatHeadway(maxHeadway)}';
           }
         }
 
@@ -136,7 +167,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
           'short_name': route['route_short_name'] ?? '',
           'color': routeColor,
           'frequency': frequencyStr,
-          'status': 'Normal',
+          'status': '', // Don't set default status
           'stations': [],
         };
       }
@@ -263,23 +294,28 @@ class _TransportScheduleState extends State<TransportSchedule> {
       }
 
       // After loading routes, update status for each line
-      // Map route_id or route_long_name to status
+      // Map route_id to status
       _lineStatus.clear();
       _lineDisruptionMsg.clear();
       for (final entry in routes.entries) {
         final name = entry.value['name'] ?? '';
         if (name.toString().toUpperCase().contains('KTM')) {
-          _lineStatus[name] = 'Unknown';
-        } else if (_lineStatus.containsKey(name)) {
-          // Already set by disruption fetch
-        } else {
-          _lineStatus[name] = 'Normal';
+          _lineStatus[entry.key] = 'Unknown';
         }
+        // Don't set default "Normal" status - only show status when there's actual information
       }
       setState(() {
         _transportLines = routes;
         _isLoading = false;
       });
+
+      // Fetch disruptions after transport lines are loaded
+      print('=== Transport lines loaded ===');
+      print('Total routes: ${routes.length}');
+      for (final entry in routes.entries) {
+        print('Route: ${entry.key} - "${entry.value['name']}"');
+      }
+      _fetchPrasaranaDisruptions();
 
       // Get location after loading GTFS data
       _getCurrentLocation();
@@ -293,42 +329,223 @@ class _TransportScheduleState extends State<TransportSchedule> {
   }
 
   Future<void> _fetchPrasaranaDisruptions() async {
-    // Map your GTFS route_id or line names to Prasarana lines as needed
-    final prasaranaLines = [
-      'LRT', 'MRT', 'RapidKL', 'Monorail', 'BRT', // Add more as needed
-    ];
+    print('=== Starting Prasarana disruptions fetch ===');
+    print('Transport lines available: ${_transportLines.length}');
+
     try {
       final url = 'https://api.data.gov.my/gtfs-realtime/alerts/prasarana';
+      print('Fetching from URL: $url');
       final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
-        // GTFS-realtime is protobuf, but this feed returns JSON if no alert
-        // Try to parse as protobuf, fallback to JSON
-        try {
-          // If you have protobuf generated, use it here
-          // final feed = FeedMessage.fromBuffer(response.bodyBytes);
-          // for (final entity in feed.entity) { ... }
-          // For now, fallback to JSON for empty/no alert
-          final jsonData = json.decode(utf8.decode(response.bodyBytes));
-          // If it's a JSON object, no disruptions
-          setState(() {
-            for (final line in prasaranaLines) {
-              _lineStatus[line] = 'Normal';
+      print('Response status: ${response.statusCode}');
+      print('Response body length: ${response.bodyBytes.length}');
+
+      if (response.statusCode == 200) {
+        if (response.bodyBytes.isNotEmpty) {
+          try {
+            // Try to parse as JSON first (for no alerts case)
+            final jsonData = json.decode(utf8.decode(response.bodyBytes));
+            print('Successfully parsed JSON response');
+            print('JSON data: $jsonData');
+
+            // Check if this is a "no alerts" response
+            if (jsonData is Map && (jsonData.isEmpty || jsonData.containsKey('message'))) {
+              print('No alerts detected in JSON response');
+              setState(() {
+                int normalCount = 0;
+                for (final entry in _transportLines.entries) {
+                  final name = entry.value['name'] ?? '';
+                  print('Checking line: ${entry.key} - "$name"');
+
+                  if (name.toString().toUpperCase().contains('LRT') ||
+                      name.toString().toUpperCase().contains('MRT') ||
+                      name.toString().toUpperCase().contains('RAPIDKL') ||
+                      name.toString().toUpperCase().contains('MONORAIL') ||
+                      name.toString().toUpperCase().contains('BRT')) {
+                    _lineStatus[entry.key] = 'Normal';
+                    normalCount++;
+                    print('✓ Set Normal status for: ${entry.key} - "$name"');
+                  }
+                }
+                print('Total Normal status set: $normalCount');
+              });
+              return;
+            } else {
+              // This might be actual alert data in JSON format
+              print('Potential alert data detected in JSON');
+              _parseAlertData(jsonData);
+              return;
             }
+          } catch (e) {
+            print('Error parsing JSON: $e');
+            // If JSON parsing fails, it might be protobuf data
+            print('Trying to parse as protobuf...');
+            _parseProtobufData(response.bodyBytes);
+            return;
+          }
+        } else {
+          print('Empty response body, treating as no disruptions');
+          setState(() {
+            int normalCount = 0;
+            for (final entry in _transportLines.entries) {
+              final name = entry.value['name'] ?? '';
+              if (name.toString().toUpperCase().contains('LRT') ||
+                  name.toString().toUpperCase().contains('MRT') ||
+                  name.toString().toUpperCase().contains('RAPIDKL') ||
+                  name.toString().toUpperCase().contains('MONORAIL') ||
+                  name.toString().toUpperCase().contains('BRT')) {
+                _lineStatus[entry.key] = 'Normal';
+                normalCount++;
+                print('✓ Set Normal status for: ${entry.key} - "$name"');
+              }
+            }
+            print('Total Normal status set: $normalCount');
           });
           return;
-        } catch (e) {
-          // If protobuf, parse disruptions (not implemented here)
         }
-      } else if (response.statusCode == 200) {
-        // If protobuf, parse disruptions (not implemented here)
+      } else {
+        print('HTTP error: ${response.statusCode}');
+        // Even if API fails, treat as no disruptions (Normal status)
+        setState(() {
+          int normalCount = 0;
+          for (final entry in _transportLines.entries) {
+            final name = entry.value['name'] ?? '';
+            if (name.toString().toUpperCase().contains('LRT') ||
+                name.toString().toUpperCase().contains('MRT') ||
+                name.toString().toUpperCase().contains('RAPIDKL') ||
+                name.toString().toUpperCase().contains('MONORAIL') ||
+                name.toString().toUpperCase().contains('BRT')) {
+              _lineStatus[entry.key] = 'Normal';
+              normalCount++;
+              print('✓ Set Normal status for: ${entry.key} - "$name" (API failed but treating as Normal)');
+            }
+          }
+          print('Total Normal status set: $normalCount');
+        });
       }
     } catch (e) {
-      // Network or parsing error
+      print('Network or parsing error: $e');
       setState(() {
-        for (final line in prasaranaLines) {
-          _lineStatus[line] = 'Unknown';
+        int unknownCount = 0;
+        for (final entry in _transportLines.entries) {
+          final name = entry.value['name'] ?? '';
+          if (name.toString().toUpperCase().contains('LRT') ||
+              name.toString().toUpperCase().contains('MRT') ||
+              name.toString().toUpperCase().contains('RAPIDKL') ||
+              name.toString().toUpperCase().contains('MONORAIL') ||
+              name.toString().toUpperCase().contains('BRT')) {
+            _lineStatus[entry.key] = 'Unknown';
+            unknownCount++;
+            print('✗ Set Unknown status for: ${entry.key} - "$name"');
+          }
         }
+        print('Total Unknown status set: $unknownCount');
       });
+    }
+    print('=== Finished Prasarana disruptions fetch ===');
+  }
+
+  void _parseAlertData(Map<String, dynamic> jsonData) {
+    print('Parsing alert data from JSON...');
+    print('Alert data: $jsonData');
+
+    // Reset all Prasarana lines to Normal first
+    for (final entry in _transportLines.entries) {
+      final name = entry.value['name'] ?? '';
+      if (name.toString().toUpperCase().contains('LRT') ||
+          name.toString().toUpperCase().contains('MRT') ||
+          name.toString().toUpperCase().contains('RAPIDKL') ||
+          name.toString().toUpperCase().contains('MONORAIL') ||
+          name.toString().toUpperCase().contains('BRT')) {
+        _lineStatus[entry.key] = 'Normal';
+      }
+    }
+
+    // Parse alerts if they exist
+    if (jsonData.containsKey('entity') && jsonData['entity'] is List) {
+      final entities = jsonData['entity'] as List;
+      print('Found ${entities.length} alert entities');
+
+      for (final entity in entities) {
+        if (entity is Map<String, dynamic> && entity.containsKey('alert')) {
+          final alert = entity['alert'];
+          if (alert is Map<String, dynamic>) {
+            final headerText = alert['headerText']?['translation']?[0]?['text'] ?? '';
+            final descriptionText = alert['descriptionText']?['translation']?[0]?['text'] ?? '';
+            final effect = alert['effect'] ?? '';
+
+            print('Alert: $headerText - $descriptionText - Effect: $effect');
+
+            // Determine status based on effect
+            String status = 'Normal';
+            if (effect == 'DETOUR' || effect == 'SIGNIFICANT_DELAYS' ||
+                effect == 'REDUCED_SERVICE' || effect == 'STOP_MOVED') {
+              status = 'Delayed';
+            } else if (effect == 'NO_SERVICE' || effect == 'ADDITIONAL_SERVICE') {
+              status = 'Disrupted';
+            }
+
+            // Try to match alert to specific lines
+            _matchAlertToLines(headerText, descriptionText, status);
+          }
+        }
+      }
+    }
+
+    setState(() {});
+  }
+
+  void _parseProtobufData(Uint8List data) {
+    print('Parsing protobuf data...');
+    // Note: This would require protobuf generated classes
+    // For now, we'll treat protobuf data as potential disruptions
+    print('Protobuf data detected - treating as potential disruptions');
+
+    setState(() {
+      for (final entry in _transportLines.entries) {
+        final name = entry.value['name'] ?? '';
+        if (name.toString().toUpperCase().contains('LRT') ||
+            name.toString().toUpperCase().contains('MRT') ||
+            name.toString().toUpperCase().contains('RAPIDKL') ||
+            name.toString().toUpperCase().contains('MONORAIL') ||
+            name.toString().toUpperCase().contains('BRT')) {
+          _lineStatus[entry.key] = 'Delayed'; // Assume delayed if protobuf data exists
+          print('⚠ Set Delayed status for: ${entry.key} - "$name" (protobuf data detected)');
+        }
+      }
+    });
+  }
+
+  void _matchAlertToLines(String headerText, String descriptionText, String status) {
+    // Simple keyword matching to associate alerts with lines
+    final text = '${headerText.toLowerCase()} ${descriptionText.toLowerCase()}';
+
+    for (final entry in _transportLines.entries) {
+      final name = entry.value['name'] ?? '';
+      final routeId = entry.key;
+
+      // Check if this line is mentioned in the alert
+      bool isAffected = false;
+
+      if (name.toString().toUpperCase().contains('LRT') &&
+          (text.contains('lrt') || text.contains('light rail'))) {
+        isAffected = true;
+      } else if (name.toString().toUpperCase().contains('MRT') &&
+          (text.contains('mrt') || text.contains('mass rapid'))) {
+        isAffected = true;
+      } else if (name.toString().toUpperCase().contains('MONORAIL') &&
+          (text.contains('monorail'))) {
+        isAffected = true;
+      } else if (name.toString().toUpperCase().contains('BRT') &&
+          (text.contains('brt') || text.contains('bus rapid'))) {
+        isAffected = true;
+      }
+
+      if (isAffected) {
+        _lineStatus[routeId] = status;
+        _lineDisruptionMsg[routeId] = headerText;
+        print('⚠ Set $status status for: $routeId - "$name"');
+        print('  Alert: $headerText');
+      }
     }
   }
 
@@ -388,6 +605,11 @@ class _TransportScheduleState extends State<TransportSchedule> {
         _sortLinesByDistance();
         _isLoading = false;
       });
+
+      // Auto-start speech after everything is loaded
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _speakAllTransportLines();
+      });
     } catch (e) {
       setState(() {
         _errorMessage = 'Error getting location: $e';
@@ -446,168 +668,286 @@ class _TransportScheduleState extends State<TransportSchedule> {
     return '${(secs / 60).toStringAsFixed(1)} min';
   }
 
+  Future<void> _speakTransportLineInfo(Map<String, dynamic> line) async {
+    final lineName = line['long_name'] ?? 'Unknown Line';
+    final frequency = _formatFrequencyForSpeech(line['frequency'] ?? 'Unknown frequency');
+    final status = _lineStatus[line['route_id']] ?? '';
+    final nearestStation = line['nearest_station'] ?? 'Unknown station';
+    final distance = _formatDistance(line['distance'] ?? 0);
+
+    String speechText = "$lineName. ";
+    speechText += "Frequency: $frequency. ";
+
+    // Only mention status if it's available and not empty
+    if (status != null && status.isNotEmpty && status != 'Unknown status') {
+      speechText += "Status: $status. ";
+    }
+
+    speechText += "Nearest station: $nearestStation, $distance away. ";
+
+    // Add disruption message if available
+    final disruptionMsg = _lineDisruptionMsg[line['route_id']];
+    if (disruptionMsg != null && disruptionMsg.isNotEmpty) {
+      speechText += "Alert: $disruptionMsg. ";
+    }
+
+    await flutterTts.speak(speechText);
+  }
+
+  String _formatFrequencyForSpeech(String frequency) {
+    // Replace dashes with "to" for better speech
+    return frequency.replaceAll('-', ' to ');
+  }
+
+  Future<void> _speakAllTransportLines() async {
+    if (_lines.isEmpty) {
+      await flutterTts.speak("No transport lines available.");
+      return;
+    }
+
+    String speechText = "Found ${_lines.length} transport lines. ";
+
+    for (int i = 0; i < _lines.length && i < 5; i++) {
+      final line = _lines[i];
+      final lineName = line['long_name'] ?? 'Unknown Line';
+      final frequency = _formatFrequencyForSpeech(line['frequency'] ?? 'Unknown frequency');
+      final status = _lineStatus[line['route_id']] ?? '';
+
+      speechText += "Line ${i + 1}: $lineName. Frequency: $frequency. ";
+
+      // Only mention status if it's available and not empty
+      if (status != null && status.isNotEmpty && status != 'Unknown status') {
+        speechText += "Status: $status. ";
+      }
+    }
+
+    if (_lines.length > 5) {
+      speechText += "There are ${_lines.length - 5} more lines available. ";
+    }
+
+    speechText += "Tap on any line to hear detailed information.";
+
+    await flutterTts.speak(speechText);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Public Transport Lines'),
-        backgroundColor: Colors.blue,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              setState(() {
-                _isLoading = true;
-              });
-              _loadGTFSData();
-            },
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-          ? Center(child: Text(_errorMessage!))
-          : RefreshIndicator(
-        onRefresh: _loadGTFSData,
-        child: ListView.builder(
-          itemCount: _lines.length,
-          itemBuilder: (context, index) {
-            final line = _lines[index];
-            final lineData = _transportLines[line['route_id']]!;
-            final status = _lineStatus[line['route_id']] ?? line['status'];
-            final disruptionMsg = _lineDisruptionMsg[line['route_id']];
-            return Card(
-              margin: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
-              ),
-              child: ExpansionTile(
-                leading: Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: line['color'],
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                title: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      body: Column(
+        children: [
+          // Blue header
+          Container(
+            width: double.infinity,
+            height: 120,
+            color: const Color(0xFF2561FA),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
                   children: [
-                    Text(
-                      line['short_name'] != '' ? line['short_name'] : line['route_id'],
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 17,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
                     ),
-                    Text(
-                      line['long_name'],
-                      style: const TextStyle(
-                        fontWeight: FontWeight.normal,
-                        fontSize: 13,
-                        color: Colors.grey,
-                      ),
-                      overflow: TextOverflow.visible,
-                      softWrap: true,
-                    ),
-                  ],
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Frequency: ${line['frequency']}'),
-                    Text(
-                      'Nearest station: ${line['nearest_station']} (${_formatDistance(line['distance'])} away)',
-                      style: const TextStyle(
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!(line['long_name']?.toString()?.toUpperCase()?.contains('KTM') ?? false))
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: status == 'Normal'
-                              ? Colors.green
-                              : status == 'Unknown'
-                              ? Colors.grey
-                              : Colors.orange,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          status,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.arrow_drop_down),
-                  ],
-                ),
-                children: [
-                  if (disruptionMsg != null)
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
+                    const Expanded(
                       child: Text(
-                        disruptionMsg,
-                        style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                        'Public Transport Lines',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    color: Colors.grey[50],
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    Row(
                       children: [
-                        const Text(
-                          'Stations:',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                        // Voice control button
+                        IconButton(
+                          icon: Icon(
+                            _isSpeaking ? Icons.volume_off : Icons.volume_up,
+                            color: Colors.white,
                           ),
+                          onPressed: _isSpeaking ? null : _speakAllTransportLines,
                         ),
-                        const SizedBox(height: 8),
-                        ...lineData['stations'].map<Widget>((station) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.circle,
-                                  size: 8,
-                                  color: Colors.grey,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    station['name'],
-                                    style: const TextStyle(fontSize: 14),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
+                        IconButton(
+                          icon: const Icon(Icons.refresh, color: Colors.white),
+                          onPressed: () {
+                            setState(() {
+                              _isLoading = true;
+                            });
+                            _loadGTFSData();
+                          },
+                        ),
                       ],
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            );
-          },
-        ),
+            ),
+          ),
+          // Main content
+          Expanded(
+            child: Container(
+              color: const Color(0xFFF0F4F8), // Light blue-grey background
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _errorMessage != null
+                  ? Center(child: Text(_errorMessage!))
+                  : RefreshIndicator(
+                onRefresh: _loadGTFSData,
+                child: ListView.builder(
+                  padding: EdgeInsets.zero, // Remove default padding
+                  itemCount: _lines.length,
+                  itemBuilder: (context, index) {
+                    final line = _lines[index];
+                    final lineData = _transportLines[line['route_id']]!;
+                    final status = _lineStatus[line['route_id']] ?? '';
+                    final disruptionMsg = _lineDisruptionMsg[line['route_id']];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: ExpansionTile(
+                        onExpansionChanged: (expanded) {
+                          if (expanded) {
+                            _speakTransportLineInfo(line);
+                          }
+                        },
+                        leading: Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: line['color'],
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        title: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              line['short_name'] != '' ? line['short_name'] : line['route_id'],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 17,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                            Text(
+                              line['long_name'],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.normal,
+                                fontSize: 13,
+                                color: Colors.grey,
+                              ),
+                              overflow: TextOverflow.visible,
+                              softWrap: true,
+                            ),
+                          ],
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Frequency: ${line['frequency']}'),
+                            Text(
+                              'Nearest station: ${line['nearest_station']} (${_formatDistance(line['distance'])} away)',
+                              style: const TextStyle(
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (status.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: status == 'Normal'
+                                      ? Colors.green
+                                      : status == 'Unknown'
+                                      ? Colors.grey
+                                      : status == 'Delayed'
+                                      ? Colors.orange
+                                      : status == 'Disrupted'
+                                      ? Colors.red
+                                      : Colors.orange,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  status,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(width: 8),
+                            const Icon(Icons.arrow_drop_down),
+                          ],
+                        ),
+                        children: [
+                          if (disruptionMsg != null)
+                            Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Text(
+                                disruptionMsg,
+                                style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            color: Colors.grey[50],
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Stations:',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                ...lineData['stations'].map<Widget>((station) {
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.circle,
+                                          size: 8,
+                                          color: Colors.grey,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            station['name'],
+                                            style: const TextStyle(fontSize: 14),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
