@@ -3,6 +3,73 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:async';
+
+// Global audio player manager to ensure only one recording plays at a time
+class AudioPlayerManager {
+  static final AudioPlayerManager _instance = AudioPlayerManager._internal();
+  factory AudioPlayerManager() => _instance;
+  AudioPlayerManager._internal();
+
+  final AudioPlayer _player = AudioPlayer();
+  String? _currentPlayingId;
+
+  // List to store all widget state setters
+  final List<Function()> _stateSetters = [];
+
+  AudioPlayer get player => _player;
+  String? get currentPlayingId => _currentPlayingId;
+
+  // Method to register a widget's setState function
+  void _registerStateSetter(Function() setState) {
+    _stateSetters.add(setState);
+  }
+
+  // Method to unregister a widget's setState function
+  void _unregisterStateSetter(Function() setState) {
+    _stateSetters.remove(setState);
+  }
+
+  // Method to notify all widgets to rebuild
+  void _notifyStateChange() {
+    for (final setState in _stateSetters) {
+      setState();
+    }
+  }
+
+  Future<void> playAudio(String audioUrl, String widgetId) async {
+    // Stop current audio if playing
+    if (_currentPlayingId != null && _currentPlayingId != widgetId) {
+      await _player.stop();
+    }
+
+    try {
+      await _player.setUrl(audioUrl);
+      // Set loop mode to repeat the audio
+      await _player.setLoopMode(LoopMode.one);
+      await _player.play();
+      _currentPlayingId = widgetId;
+    } catch (e) {
+      print('Error playing audio: $e');
+      _currentPlayingId = null;
+    }
+  }
+
+  void clearCurrentPlayingId() {
+    _currentPlayingId = null;
+  }
+
+  Future<void> stopAudio() async {
+    await _player.stop();
+    _currentPlayingId = null;
+    // Reset loop mode when stopping
+    await _player.setLoopMode(LoopMode.off);
+  }
+
+  void dispose() {
+    _player.dispose();
+  }
+}
 
 class SavedAudioPage extends StatelessWidget {
   const SavedAudioPage({super.key});
@@ -180,59 +247,78 @@ class AudioPlayerWidget extends StatefulWidget {
 }
 
 class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
-  late AudioPlayer _player;
-  bool _isPlaying = false;
+  final AudioPlayerManager _audioManager = AudioPlayerManager();
+  late String _widgetId;
 
   @override
   void initState() {
     super.initState();
-    _player = AudioPlayer();
-    _player.playerStateStream.listen((state) {
-      setState(() {
-        _isPlaying = state.playing;
-      });
-    });
-    _player.processingStateStream.listen((processingState) {
-      if (processingState == ProcessingState.completed) {
-        setState(() {
-          _isPlaying = false;
-        });
-        _player.seek(Duration.zero); // Reset to start
+    _widgetId = DateTime.now().millisecondsSinceEpoch.toString();
+
+    // Register this widget's setState function
+    _audioManager._registerStateSetter(() {
+      if (mounted) {
+        setState(() {});
       }
     });
   }
 
   @override
   void dispose() {
-    _player.dispose();
+    // Unregister this widget's setState function
+    _audioManager._unregisterStateSetter(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
     super.dispose();
   }
 
   Future<void> _play() async {
+    // Immediately update the manager's current playing ID for instant UI feedback
+    _audioManager._currentPlayingId = _widgetId;
+
+    // Force all widgets to rebuild by triggering a global rebuild
+    _audioManager._notifyStateChange();
+
     try {
       print('Audio URL: ${widget.audioUrl}');
-      await _player.setUrl(widget.audioUrl);
-      _player.play();
+      await _audioManager.playAudio(widget.audioUrl, _widgetId);
     } catch (e) {
+      // Reset if play fails
+      _audioManager._currentPlayingId = null;
+      _audioManager._notifyStateChange();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not play audio: $e')));
     }
   }
 
+  Future<void> _stop() async {
+    // Immediately clear the current playing ID for instant UI feedback
+    _audioManager._currentPlayingId = null;
+
+    // Force all widgets to rebuild
+    _audioManager._notifyStateChange();
+
+    await _audioManager.stopAudio();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isCurrentlyPlaying = _audioManager.currentPlayingId == _widgetId;
+
     return Row(
       children: [
         IconButton(
-          icon: Icon(_isPlaying ? Icons.stop : Icons.play_arrow),
+          icon: Icon(isCurrentlyPlaying ? Icons.stop : Icons.play_arrow),
           onPressed: () {
-            if (_isPlaying) {
-              _player.stop();
+            if (isCurrentlyPlaying) {
+              _stop();
             } else {
               _play();
             }
           },
         ),
-        Text(_isPlaying ? 'Playing...' : 'Play'),
+        Text(isCurrentlyPlaying ? 'Playing...' : 'Play'),
       ],
     );
   }

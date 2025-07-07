@@ -6,6 +6,9 @@ import 'package:geocoding/geocoding.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'dart:math';
 
 class SearchDestination extends StatefulWidget {
   const SearchDestination({super.key});
@@ -27,11 +30,49 @@ class _SearchDestinationState extends State<SearchDestination> {
   static const String _apiKey = 'AIzaSyCnLmkL79qMenl0Sn7N4KN38RSoayv-_Bs'; // Replace with your API key
   static const double _searchRadius = 5000; // 5km radius
 
+  // Text-to-speech instance
+  final FlutterTts flutterTts = FlutterTts();
+  bool _isSpeaking = false;
+  late stt.SpeechToText _speech;
+  bool _isListening = false;
+
   @override
   void initState() {
     super.initState();
+    _speech = stt.SpeechToText();
     _loadRecentSearches();
     _initializeLocation();
+    _initializeTts();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _speakGuide());
+  }
+
+  Future<void> _initializeTts() async {
+    await flutterTts.setLanguage("en-US");
+    await flutterTts.setSpeechRate(0.35);
+    await flutterTts.setVolume(1.0);
+    await flutterTts.setPitch(1.0);
+    flutterTts.setStartHandler(() {
+      setState(() {
+        _isSpeaking = true;
+      });
+    });
+    flutterTts.setCompletionHandler(() {
+      setState(() {
+        _isSpeaking = false;
+      });
+    });
+    flutterTts.setErrorHandler((msg) {
+      setState(() {
+        _isSpeaking = false;
+      });
+    });
+  }
+
+  Future<void> _speakGuide() async {
+    await flutterTts.stop();
+    await flutterTts.speak(
+        "Welcome to the search destination page. Swipe down to start voice input, or type your destination in the search box."
+    );
   }
 
   Future<void> _loadRecentSearches() async {
@@ -286,6 +327,9 @@ class _SearchDestinationState extends State<SearchDestination> {
           // Get current position
           final position = await _getCurrentPosition();
           if (position != null && mounted) {
+            // Speak destination information
+            await _speakDestinationInfo(name);
+
             // Navigate to transport routes
             Navigator.push(
               context,
@@ -303,6 +347,37 @@ class _SearchDestinationState extends State<SearchDestination> {
     } catch (e) {
       print('Error getting place details: $e');
     }
+  }
+
+  Future<void> _speakDestinationInfo(String destinationName) async {
+    final speechText = "Searching for routes to $destinationName. Please wait while I find the best transportation options for you.";
+    await flutterTts.speak(speechText);
+  }
+
+  Future<void> _speakRouteSummary(List<Map<String, dynamic>> routes) async {
+    if (routes.isEmpty) {
+      await flutterTts.speak("No routes found to your destination. Please try a different location or transportation mode.");
+      return;
+    }
+
+    String speechText = "I found ${routes.length} route options to your destination. ";
+
+    for (int i = 0; i < routes.length && i < 3; i++) {
+      final route = routes[i];
+      final routeNumber = i + 1;
+      final duration = route['duration'] ?? 'unknown time';
+      final routeName = route['route'] ?? 'Route $routeNumber';
+
+      speechText += "Route $routeNumber: $routeName, takes about $duration. ";
+    }
+
+    if (routes.length > 3) {
+      speechText += "There are ${routes.length - 3} more route options available. ";
+    }
+
+    speechText += "Please select your preferred route from the list below.";
+
+    await flutterTts.speak(speechText);
   }
 
   void _onSearchChanged(String value) {
@@ -402,7 +477,10 @@ class _SearchDestinationState extends State<SearchDestination> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 48), // For balance
+                    IconButton(
+                      icon: Icon(_isSpeaking ? Icons.volume_off : Icons.volume_up, color: Colors.white),
+                      onPressed: _isSpeaking ? null : _speakGuide,
+                    ),
                   ],
                 ),
               ),
@@ -410,117 +488,130 @@ class _SearchDestinationState extends State<SearchDestination> {
           ),
           // Main content
           Expanded(
-            child: Container(
-              color: const Color(0xFFF0F4F8), // Light blue-grey background
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Search for a place or address',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+            child: GestureDetector(
+              onVerticalDragEnd: (details) {
+                if (details.primaryVelocity != null && details.primaryVelocity! > 0) {
+                  _listen();
+                }
+              },
+              child: Container(
+                color: const Color(0xFFF0F4F8), // Light blue-grey background
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: 'Search for a place or address',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: IconButton(
+                            icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
+                            onPressed: _listen,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[100],
                         ),
-                        filled: true,
-                        fillColor: Colors.grey[100],
+                        onTap: () {
+                          setState(() => _suggestions = []);
+                        },
+                        onChanged: (value) {
+                          print('Searching for: $value');
+                          _searchPlaces(value);
+                        },
                       ),
-                      onTap: () {
-                        setState(() => _suggestions = []);
-                      },
-                      onChanged: (value) {
-                        print('Searching for: $value');
-                        _searchPlaces(value);
-                      },
                     ),
-                  ),
-                  Expanded(
-                    child: _suggestions.isNotEmpty
-                        ? ListView.builder(
-                      itemCount: _suggestions.length,
-                      itemBuilder: (context, index) {
-                        final suggestion = _suggestions[index];
-                        return ListTile(
-                          leading: const Icon(Icons.location_on),
-                          title: Text(suggestion['name']),
-                          subtitle: Text(suggestion['address']),
-                          onTap: () => _getPlaceDetails(suggestion['place_id']),
-                        );
-                      },
-                    )
-                        : FutureBuilder<List<Map<String, dynamic>>>(
-                      future: _getRecentSearches(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator());
-                        }
-
-                        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                          return const Center(
-                            child: Text(
-                              'No recent searches',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey,
-                              ),
-                            ),
+                    Expanded(
+                      child: _suggestions.isNotEmpty
+                          ? ListView.builder(
+                        itemCount: _suggestions.length,
+                        itemBuilder: (context, index) {
+                          final suggestion = _suggestions[index];
+                          return ListTile(
+                            leading: const Icon(Icons.location_on),
+                            title: Text(suggestion['name']),
+                            subtitle: Text(suggestion['address']),
+                            onTap: () => _getPlaceDetails(suggestion['place_id']),
                           );
-                        }
+                        },
+                      )
+                          : FutureBuilder<List<Map<String, dynamic>>>(
+                        future: _getRecentSearches(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
 
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Padding(
-                              padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                            return const Center(
                               child: Text(
-                                'Recent Searches',
+                                'No recent searches',
                                 style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Colors.grey,
                                 ),
                               ),
-                            ),
-                            Expanded(
-                              child: ListView.builder(
-                                padding: EdgeInsets.zero,
-                                itemCount: snapshot.data!.length,
-                                itemBuilder: (context, index) {
-                                  final search = snapshot.data![index];
-                                  return ListTile(
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                                    leading: const Icon(Icons.history),
-                                    title: Text(search['name']),
-                                    subtitle: Text(search['address']),
-                                    onTap: () async {
-                                      final position = await _getCurrentPosition();
-                                      if (position != null && mounted) {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => TransportRoutes(
-                                              destination: LatLng(
-                                                search['latitude'],
-                                                search['longitude'],
-                                              ),
-                                              destinationName: search['name'],
-                                              currentLocation: position,
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                  );
-                                },
+                            );
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                                child: Text(
+                                  'Recent Searches',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ],
-                        );
-                      },
+                              Expanded(
+                                child: ListView.builder(
+                                  shrinkWrap: true,
+                                  physics: NeverScrollableScrollPhysics(),
+                                  padding: EdgeInsets.zero,
+                                  itemCount: min(4, snapshot.data!.length),
+                                  itemBuilder: (context, index) {
+                                    final search = snapshot.data![index];
+                                    return ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                      leading: const Icon(Icons.history),
+                                      title: Text(search['name']),
+                                      subtitle: Text(search['address']),
+                                      onTap: () async {
+                                        final position = await _getCurrentPosition();
+                                        if (position != null && mounted) {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) => TransportRoutes(
+                                                destination: LatLng(
+                                                  search['latitude'],
+                                                  search['longitude'],
+                                                ),
+                                                destinationName: search['name'],
+                                                currentLocation: position,
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      },
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -647,8 +738,87 @@ class _SearchDestinationState extends State<SearchDestination> {
     return await Geolocator.getCurrentPosition();
   }
 
+  Future<Map<String, double>?> _fetchLatLngFromPlaceId(String placeId) async {
+    final apiKey = 'AIzaSyCnLmkL79qMenl0Sn7N4KN38RSoayv-_Bs'; // Use your existing API key
+    final url = 'https://maps.googleapis.com/maps/api/place/details/json?place_id=$placeId&key=$apiKey';
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final location = data['result']?['geometry']?['location'];
+      if (location != null && location['lat'] != null && location['lng'] != null) {
+        return {'lat': (location['lat'] as num).toDouble(), 'lng': (location['lng'] as num).toDouble()};
+      }
+    }
+    return null;
+  }
+
+  void _goToRouteForSuggestion(Map<String, dynamic> suggestion) async {
+    final position = await _getCurrentPosition();
+    if (position != null && mounted) {
+      double? lat;
+      double? lng;
+      if (suggestion['latitude'] != null && suggestion['longitude'] != null) {
+        lat = suggestion['latitude'] is double ? suggestion['latitude'] : double.tryParse(suggestion['latitude'].toString());
+        lng = suggestion['longitude'] is double ? suggestion['longitude'] : double.tryParse(suggestion['longitude'].toString());
+      } else if (suggestion['place_id'] != null) {
+        final coords = await _fetchLatLngFromPlaceId(suggestion['place_id']);
+        if (coords != null) {
+          lat = coords['lat'];
+          lng = coords['lng'];
+        }
+      }
+      if (lat != null && lng != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => TransportRoutes(
+              destination: LatLng(lat!, lng!),
+              destinationName: suggestion['name'] ?? '',
+              currentLocation: position,
+            ),
+          ),
+        );
+      } else {
+        print('Suggestion missing or invalid latitude or longitude: $suggestion');
+      }
+    }
+  }
+
+  void _listen() async {
+    if (!_isListening) {
+      bool available = await _speech.initialize(
+        onStatus: (val) => print('onStatus: $val'),
+        onError: (val) => print('onError: $val'),
+      );
+      if (available) {
+        setState(() => _isListening = true);
+        _speech.listen(
+          onResult: (val) async {
+            setState(() {
+              _searchController.text = val.recognizedWords;
+            });
+            // Automatically trigger search when speech is final
+            if (val.finalResult) {
+              await _searchPlaces(val.recognizedWords);
+              setState(() => _isListening = false);
+              _speech.stop();
+              if (_suggestions.isNotEmpty) {
+                _goToRouteForSuggestion(_suggestions[0]);
+              }
+            }
+          },
+        );
+      }
+    } else {
+      setState(() => _isListening = false);
+      _speech.stop();
+    }
+  }
+
   @override
   void dispose() {
+    _speech.stop();
+    flutterTts.stop();
     _searchController.dispose();
     _mapController?.dispose();
     super.dispose();
