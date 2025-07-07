@@ -32,7 +32,10 @@ class _TransportScheduleState extends State<TransportSchedule> {
   void initState() {
     super.initState();
     _initializeTts();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future.delayed(const Duration(milliseconds: 100));
+      await _speakLoadingGuide();
+      setState(() { _isLoading = true; });
       _loadGTFSData();
     });
   }
@@ -728,6 +731,13 @@ class _TransportScheduleState extends State<TransportSchedule> {
     speechText += "Tap on any line to hear detailed information.";
 
     await flutterTts.speak(speechText);
+  }
+
+  Future<void> _speakLoadingGuide() async {
+    await flutterTts.stop();
+    await flutterTts.speak(
+        "Looking for public transport lines, please wait for a while."
+    );
   }
 
   @override

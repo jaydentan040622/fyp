@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'splash_screen.dart';
 
+final RouteObserver<ModalRoute<void>> routeObserver = RouteObserver<ModalRoute<void>>();
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
   @override
@@ -11,7 +13,7 @@ class MyApp extends StatelessWidget {
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
-    
+
     return MaterialApp(
       title: 'OptiChat',
       debugShowCheckedModeBanner: false,
@@ -24,6 +26,7 @@ class MyApp extends StatelessWidget {
         ),
       ),
       home: const SplashScreen(),
+      navigatorObservers: [routeObserver],
     );
   }
 }

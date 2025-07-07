@@ -44,7 +44,7 @@ class _TransportRoutesState extends State<TransportRoutes> {
 
   Future<void> _initializeTts() async {
     await flutterTts.setLanguage("en-US");
-    await flutterTts.setSpeechRate(0.4); // Slower speech rate
+    await flutterTts.setSpeechRate(0.4);
     await flutterTts.setVolume(1.0);
     await flutterTts.setPitch(1.0);
 
@@ -755,6 +755,7 @@ class _TransportRoutesState extends State<TransportRoutes> {
 
   @override
   void dispose() {
+    flutterTts.stop();
     _mapController?.dispose();
     super.dispose();
   }
