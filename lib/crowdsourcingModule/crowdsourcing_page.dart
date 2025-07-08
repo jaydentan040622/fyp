@@ -17,19 +17,19 @@ class _CrowdsourcingPageState extends State<CrowdsourcingPage> {
   Timer? _pageAnnouncementTimer;
   bool _gestureEnabled = true;
   bool _isInitialized = false;
-  
+
   final List<String> _features = [
     'Chatbot for assistance - Swipe up to access',
     'Voice Note recording - Swipe down to access'
   ];
-  
+
   @override
   void initState() {
     super.initState();
     _initializeGestureService();
     _startPageAnnouncements();
   }
-  
+
   @override
   void dispose() {
     _pageAnnouncementTimer?.cancel();
@@ -41,25 +41,25 @@ class _CrowdsourcingPageState extends State<CrowdsourcingPage> {
   Future<void> _initializeGestureService() async {
     try {
       await _gestureService.initialize();
-      
+
       // Set gesture callback
       _gestureService.setGestureCallback((GestureType gesture) {
         _handleGesture(gesture);
       });
-      
+
       setState(() {
         _isInitialized = true;
       });
-      
+
       // Welcome message
       Future.delayed(const Duration(seconds: 1), () {
         if (mounted) {
           _gestureService.speak(
-            'Crowdsourcing page loaded. Swipe up for Chatbot, swipe down for Voice Note, or swipe left to go back to main page.'
+              'Crowdsourcing page loaded. Swipe up for Chatbot, swipe down for Voice Note, or swipe left to go back to main page.'
           );
         }
       });
-      
+
     } catch (e) {
       debugPrint('Error initializing gesture service: $e');
     }
@@ -67,14 +67,14 @@ class _CrowdsourcingPageState extends State<CrowdsourcingPage> {
 
   void _startPageAnnouncements() {
     _pageAnnouncementTimer?.cancel();
-    
+
     // Register this page as the active announcement source
     if (!_gestureService.setActiveAnnouncementSource('crowdsourcing_page')) {
       // Another page is already making announcements, stop all first
       _gestureService.stopAllAnnouncements();
       _gestureService.setActiveAnnouncementSource('crowdsourcing_page');
     }
-    
+
     _pageAnnouncementTimer = Timer.periodic(const Duration(seconds: 8), (timer) {
       if (mounted && _isInitialized && _gestureService.canMakeAnnouncements('crowdsourcing_page')) {
         _announcePageContent();
@@ -89,7 +89,7 @@ class _CrowdsourcingPageState extends State<CrowdsourcingPage> {
 
   void _handleGesture(GestureType gesture) {
     if (!_gestureEnabled) return;
-    
+
     switch (gesture) {
       case GestureType.swipeUp:
         _navigateToChatbot();
@@ -208,7 +208,7 @@ class _CrowdsourcingPageState extends State<CrowdsourcingPage> {
                             _gestureEnabled = !_gestureEnabled;
                           });
                           _gestureService.speak(
-                            _gestureEnabled ? 'Gesture navigation enabled' : 'Gesture navigation disabled'
+                              _gestureEnabled ? 'Gesture navigation enabled' : 'Gesture navigation disabled'
                           );
                         },
                         tooltip: 'Toggle gesture navigation',
@@ -218,7 +218,7 @@ class _CrowdsourcingPageState extends State<CrowdsourcingPage> {
                 ),
               ),
             ),
-            
+
             // Main content
             Expanded(
               child: Container(
@@ -229,7 +229,7 @@ class _CrowdsourcingPageState extends State<CrowdsourcingPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const SizedBox(height: 20),
-                      
+
                       // Chatbot button
                       _buildFeatureButton(
                         context: context,
@@ -238,9 +238,9 @@ class _CrowdsourcingPageState extends State<CrowdsourcingPage> {
                         subtitle: 'Swipe up to access',
                         onTap: _navigateToChatbot,
                       ),
-                      
+
                       const SizedBox(height: 24),
-                      
+
                       // Voice Note button
                       _buildFeatureButton(
                         context: context,
@@ -249,9 +249,9 @@ class _CrowdsourcingPageState extends State<CrowdsourcingPage> {
                         subtitle: 'Swipe down to access',
                         onTap: _navigateToVoiceNote,
                       ),
-                      
+
                       const SizedBox(height: 24),
-                      
+
                       // Gesture instruction panel
                       if (_gestureEnabled && _isInitialized)
                         Container(
@@ -281,7 +281,7 @@ class _CrowdsourcingPageState extends State<CrowdsourcingPage> {
       ),
     );
   }
-  
+
   Widget _buildFeatureButton({
     required BuildContext context,
     required IconData icon,

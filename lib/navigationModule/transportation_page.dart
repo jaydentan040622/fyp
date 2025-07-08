@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:fyp/accountModule/app.dart';
 
+import 'navigation_page.dart';
 import 'searchDestination.dart';
 import 'transportSchedule.dart';
 
@@ -67,16 +68,18 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
   Future<void> _speakGuide() async {
     await flutterTts.stop();
     await flutterTts.speak(
-        "Welcome to the transportation page. Swipe down to search for a destination. Swipe up to check public transport availability. You can also tap the top or bottom button."
+        "Welcome to the transportation page. Swipe up to search for a destination. Swipe down to check public transport availability. Swipe left to go back, swipe right to go to the main menu. You can also tap the top or bottom button."
     );
   }
 
   void _handleVerticalSwipe(DragEndDetails details) async {
     if (details.primaryVelocity != null) {
-      if (details.primaryVelocity! > 0) {
+      if (details.primaryVelocity! < 0) {
+        // Swipe from down to up
         await flutterTts.stop();
         Navigator.push(context, MaterialPageRoute(builder: (context) => SearchDestination()));
-      } else if (details.primaryVelocity! < 0) {
+      } else if (details.primaryVelocity! > 0) {
+        // Swipe from up to down
         await flutterTts.stop();
         Navigator.push(context, MaterialPageRoute(builder: (context) => TransportSchedule()));
       }
@@ -138,6 +141,23 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
                   padding: const EdgeInsets.all(16.0),
                   child: GestureDetector(
                     onVerticalDragEnd: _handleVerticalSwipe,
+                    onHorizontalDragEnd: (details) async {
+                      if (details.primaryVelocity != null) {
+                        if (details.primaryVelocity! < 0) {
+                          // Swipe left (right-to-left): go back
+                          await flutterTts.stop();
+                          Navigator.pop(context);
+                        } else if (details.primaryVelocity! > 0) {
+                          // Swipe right (left-to-right): go to main menu
+                          await flutterTts.stop();
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(builder: (context) => NavigationPage()),
+                                (route) => false,
+                          );
+                        }
+                      }
+                    },
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [

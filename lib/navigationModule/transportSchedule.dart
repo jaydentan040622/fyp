@@ -8,6 +8,8 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'dart:typed_data';
 import 'package:flutter_tts/flutter_tts.dart';
 
+import 'navigation_page.dart';
+
 class TransportSchedule extends StatefulWidget {
   const TransportSchedule({Key? key}) : super(key: key);
 
@@ -35,6 +37,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future.delayed(const Duration(milliseconds: 100));
       await _speakLoadingGuide();
+      if (!mounted) return;
       setState(() { _isLoading = true; });
       _loadGTFSData();
     });
@@ -42,23 +45,26 @@ class _TransportScheduleState extends State<TransportSchedule> {
 
   Future<void> _initializeTts() async {
     await flutterTts.setLanguage("en-US");
-    await flutterTts.setSpeechRate(0.3); // Slower speech rate
+    await flutterTts.setSpeechRate(0.4); // Slower speech rate
     await flutterTts.setVolume(1.0);
     await flutterTts.setPitch(1.0);
 
     flutterTts.setStartHandler(() {
+      if (!mounted) return;
       setState(() {
         _isSpeaking = true;
       });
     });
 
     flutterTts.setCompletionHandler(() {
+      if (!mounted) return;
       setState(() {
         _isSpeaking = false;
       });
     });
 
     flutterTts.setErrorHandler((msg) {
+      if (!mounted) return;
       setState(() {
         _isSpeaking = false;
       });
@@ -307,6 +313,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
         }
         // Don't set default "Normal" status - only show status when there's actual information
       }
+      if (!mounted) return;
       setState(() {
         _transportLines = routes;
         _isLoading = false;
@@ -324,6 +331,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
       _getCurrentLocation();
     } catch (e) {
       print('Error in _loadGTFSData: $e');
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Error loading GTFS data: $e';
         _isLoading = false;
@@ -353,6 +361,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
             // Check if this is a "no alerts" response
             if (jsonData is Map && (jsonData.isEmpty || jsonData.containsKey('message'))) {
               print('No alerts detected in JSON response');
+              if (!mounted) return;
               setState(() {
                 int normalCount = 0;
                 for (final entry in _transportLines.entries) {
@@ -387,6 +396,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
           }
         } else {
           print('Empty response body, treating as no disruptions');
+          if (!mounted) return;
           setState(() {
             int normalCount = 0;
             for (final entry in _transportLines.entries) {
@@ -408,6 +418,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
       } else {
         print('HTTP error: ${response.statusCode}');
         // Even if API fails, treat as no disruptions (Normal status)
+        if (!mounted) return;
         setState(() {
           int normalCount = 0;
           for (final entry in _transportLines.entries) {
@@ -427,6 +438,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
       }
     } catch (e) {
       print('Network or parsing error: $e');
+      if (!mounted) return;
       setState(() {
         int unknownCount = 0;
         for (final entry in _transportLines.entries) {
@@ -494,6 +506,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
       }
     }
 
+    if (!mounted) return;
     setState(() {});
   }
 
@@ -503,6 +516,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
     // For now, we'll treat protobuf data as potential disruptions
     print('Protobuf data detected - treating as potential disruptions');
 
+    if (!mounted) return;
     setState(() {
       for (final entry in _transportLines.entries) {
         final name = entry.value['name'] ?? '';
@@ -580,6 +594,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
+        if (!mounted) return;
         setState(() {
           _errorMessage = 'Location services are disabled.';
           _isLoading = false;
@@ -591,6 +606,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
+          if (!mounted) return;
           setState(() {
             _errorMessage = 'Location permissions are denied.';
             _isLoading = false;
@@ -603,6 +619,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
         desiredAccuracy: LocationAccuracy.high,
       );
 
+      if (!mounted) return;
       setState(() {
         _currentPosition = position;
         _sortLinesByDistance();
@@ -614,6 +631,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
         _speakAllTransportLines();
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Error getting location: $e';
         _isLoading = false;
@@ -703,6 +721,10 @@ class _TransportScheduleState extends State<TransportSchedule> {
   }
 
   Future<void> _speakAllTransportLines() async {
+    await flutterTts.stop();
+    await flutterTts.speak(
+        "You are on the public transport lines page. Swipe left to go back, swipe right to go to the main menu. Here are the available public transport lines."
+    );
     if (_lines.isEmpty) {
       await flutterTts.speak("No transport lines available.");
       return;
@@ -710,22 +732,18 @@ class _TransportScheduleState extends State<TransportSchedule> {
 
     String speechText = "Found ${_lines.length} transport lines. ";
 
-    for (int i = 0; i < _lines.length && i < 5; i++) {
+    for (int i = 0; i < _lines.length && i < _lines.length; i++) {
       final line = _lines[i];
       final lineName = line['long_name'] ?? 'Unknown Line';
       final frequency = _formatFrequencyForSpeech(line['frequency'] ?? 'Unknown frequency');
       final status = _lineStatus[line['route_id']] ?? '';
 
-      speechText += "Line ${i + 1}: $lineName. Frequency: $frequency. ";
+      speechText += "Line ${i + 1}: ${lineName}. Frequency: ${frequency}. ";
 
       // Only mention status if it's available and not empty
-      if (status != null && status.isNotEmpty && status != 'Unknown status') {
-        speechText += "Status: $status. ";
+      if (status.isNotEmpty && status != 'Unknown status') {
+        speechText += "Status: ${status}. ";
       }
-    }
-
-    if (_lines.length > 5) {
-      speechText += "There are ${_lines.length - 5} more lines available. ";
     }
 
     speechText += "Tap on any line to hear detailed information.";
@@ -783,6 +801,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
                         IconButton(
                           icon: const Icon(Icons.refresh, color: Colors.white),
                           onPressed: () {
+                            if (!mounted) return;
                             setState(() {
                               _isLoading = true;
                             });
@@ -798,161 +817,180 @@ class _TransportScheduleState extends State<TransportSchedule> {
           ),
           // Main content
           Expanded(
-            child: Container(
-              color: const Color(0xFFF0F4F8), // Light blue-grey background
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _errorMessage != null
-                  ? Center(child: Text(_errorMessage!))
-                  : RefreshIndicator(
-                onRefresh: _loadGTFSData,
-                child: ListView.builder(
-                  padding: EdgeInsets.zero, // Remove default padding
-                  itemCount: _lines.length,
-                  itemBuilder: (context, index) {
-                    final line = _lines[index];
-                    final lineData = _transportLines[line['route_id']]!;
-                    final status = _lineStatus[line['route_id']] ?? '';
-                    final disruptionMsg = _lineDisruptionMsg[line['route_id']];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      child: ExpansionTile(
-                        onExpansionChanged: (expanded) {
-                          if (expanded) {
-                            _speakTransportLineInfo(line);
-                          }
-                        },
-                        leading: Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: line['color'],
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        title: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              line['short_name'] != '' ? line['short_name'] : line['route_id'],
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 17,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                            Text(
-                              line['long_name'],
-                              style: const TextStyle(
-                                fontWeight: FontWeight.normal,
-                                fontSize: 13,
-                                color: Colors.grey,
-                              ),
-                              overflow: TextOverflow.visible,
-                              softWrap: true,
-                            ),
-                          ],
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Frequency: ${line['frequency']}'),
-                            Text(
-                              'Nearest station: ${line['nearest_station']} (${_formatDistance(line['distance'])} away)',
-                              style: const TextStyle(
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (status.isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: status == 'Normal'
-                                      ? Colors.green
-                                      : status == 'Unknown'
-                                      ? Colors.grey
-                                      : status == 'Delayed'
-                                      ? Colors.orange
-                                      : status == 'Disrupted'
-                                      ? Colors.red
-                                      : Colors.orange,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  status,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            const SizedBox(width: 8),
-                            const Icon(Icons.arrow_drop_down),
-                          ],
-                        ),
-                        children: [
-                          if (disruptionMsg != null)
-                            Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: Text(
-                                disruptionMsg,
-                                style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            color: Colors.grey[50],
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Stations:',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                ...lineData['stations'].map<Widget>((station) {
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 4),
-                                    child: Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.circle,
-                                          size: 8,
-                                          color: Colors.grey,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            station['name'],
-                                            style: const TextStyle(fontSize: 14),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+            child: GestureDetector(
+              onHorizontalDragEnd: (details) async {
+                if (details.primaryVelocity != null) {
+                  if (details.primaryVelocity! < 0) {
+                    // Swipe left (right-to-left): go back
+                    await flutterTts.stop();
+                    Navigator.pop(context);
+                  } else if (details.primaryVelocity! > 0) {
+                    // Swipe right (left-to-right): go to main menu
+                    await flutterTts.stop();
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (context) => NavigationPage()),
+                          (route) => false,
                     );
-                  },
+                  }
+                }
+              },
+              child: Container(
+                color: const Color(0xFFF0F4F8), // Light blue-grey background
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _errorMessage != null
+                    ? Center(child: Text(_errorMessage!))
+                    : RefreshIndicator(
+                  onRefresh: _loadGTFSData,
+                  child: ListView.builder(
+                    padding: EdgeInsets.zero, // Remove default padding
+                    itemCount: _lines.length,
+                    itemBuilder: (context, index) {
+                      final line = _lines[index];
+                      final lineData = _transportLines[line['route_id']]!;
+                      final status = _lineStatus[line['route_id']] ?? '';
+                      final disruptionMsg = _lineDisruptionMsg[line['route_id']];
+                      return Card(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: ExpansionTile(
+                          onExpansionChanged: (expanded) {
+                            if (expanded) {
+                              _speakTransportLineInfo(line);
+                            }
+                          },
+                          leading: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: line['color'],
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          title: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                line['short_name'] != '' ? line['short_name'] : line['route_id'],
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 17,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                              Text(
+                                line['long_name'],
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.normal,
+                                  fontSize: 13,
+                                  color: Colors.grey,
+                                ),
+                                overflow: TextOverflow.visible,
+                                softWrap: true,
+                              ),
+                            ],
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Frequency: ${line['frequency']}'),
+                              Text(
+                                'Nearest station: ${line['nearest_station']} (${_formatDistance(line['distance'])} away)',
+                                style: const TextStyle(
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (status.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: status == 'Normal'
+                                        ? Colors.green
+                                        : status == 'Unknown'
+                                        ? Colors.grey
+                                        : status == 'Delayed'
+                                        ? Colors.orange
+                                        : status == 'Disrupted'
+                                        ? Colors.red
+                                        : Colors.orange,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    status,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.arrow_drop_down),
+                            ],
+                          ),
+                          children: [
+                            if (disruptionMsg != null)
+                              Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Text(
+                                  disruptionMsg,
+                                  style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              color: Colors.grey[50],
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Stations:',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ...lineData['stations'].map<Widget>((station) {
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 4),
+                                      child: Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.circle,
+                                            size: 8,
+                                            color: Colors.grey,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              station['name'],
+                                              style: const TextStyle(fontSize: 14),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
