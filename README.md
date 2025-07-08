@@ -4,84 +4,127 @@ A Flutter app designed with accessibility features for blind and visually impair
 
 ## Features
 
-### 🎯 Gesture Recognition for Accessibility
+### 🎯 Comprehensive Gesture Recognition System
 
-The app now includes advanced gesture recognition features specifically designed for blind users:
+The app now includes advanced gesture recognition features specifically designed for blind users across all main pages:
 
-#### Available Gestures:
-1. **Swipe Left/Right**: Navigate between pages
-   - Swipe left to go to the previous page
-   - Swipe right to go to the next page
-
+#### **Home Page Gestures:**
+1. **Swipe Left/Right**: Navigate between main pages (Image Processing, Crowdsourcing, Navigation)
 2. **Downward Line**: Open user profile
-   - Draw a straight line downward on the screen to open the user profile
+3. **Swipe Up**: Confirm page selection and navigate to the current page
 
-3. **Swipe Up**: Confirm page selection
-   - Swipe upward on the screen to confirm and navigate to the current page
+#### **Image Processing Page Gestures:**
+1. **Swipe Up**: Enter Live Detection
+2. **Swipe Down**: Open OCR Text Recognition  
+3. **Swipe Left**: Return to main page
 
-#### Audio Feedback:
-- **Home Page Announcements**: Every 5 seconds while on the home page, the app announces the current page
-- **Gesture Confirmation**: Each gesture triggers audio feedback and haptic vibration
-- **Navigation Feedback**: Audio confirmation when reaching first/last page
+#### **Crowdsourcing Page Gestures:**
+1. **Swipe Up**: Enter Chatbot
+2. **Swipe Down**: Open Voice Note function
+3. **Swipe Left**: Return to main page
 
-#### Controls:
-- **Gesture Toggle**: Use the gesture icon in the top-right to enable/disable gestures
-- **Visual Instructions**: When gestures are enabled, instruction text appears at the bottom
+#### **Navigation Page Gestures:**
+1. **Swipe Up**: Enter Live Location Tracking
+2. **Swipe Down**: Enter Transportation
+3. **Swipe Left**: Return to main page
+
+### 🎵 Smart Audio Announcement System
+
+#### **Page-Specific Announcements:**
+- **Home Page**: Announces current page every 5 seconds (only when on home page)
+- **Image Processing Page**: Announces available features every 8 seconds
+- **Crowdsourcing Page**: Announces available features every 8 seconds  
+- **Navigation Page**: Announces available features every 8 seconds
+- **No Overlap**: Announcements automatically pause when navigating to sub-pages
+
+#### **Audio Feedback Features:**
+- **Welcome Messages**: Each page announces available gestures upon entry
+- **Gesture Confirmation**: Audio feedback for each detected gesture
+- **Navigation Feedback**: Confirmation when reaching page limits
+- **Context-Aware**: Announcements stop when leaving pages to avoid conflicts
 
 ### 🔧 Technical Implementation
 
-#### Gesture Recognition Service (`GestureRecognitionService`)
-- **Custom Gesture Detection**: Analyzes touch patterns to detect specific gestures
-- **Configurable Parameters**: Adjustable sensitivity for different gesture types
-- **Haptic Feedback**: Different vibration patterns for each gesture type
-- **Text-to-Speech Integration**: Built-in TTS for audio announcements
-
-#### Gesture Detection Parameters:
+#### **Gesture Detection Parameters:**
 - **Horizontal Swipe Detection**: Minimum 100px horizontal movement with <50px vertical deviation
 - **Downward Line Detection**: Minimum 80px downward movement with <30px horizontal deviation  
 - **Upward Swipe Detection**: Minimum 100px upward movement with <50px horizontal deviation
 
-### 🎵 Audio Features:
-- **Page Announcements**: "Current page: [Page Name]" (every 5 seconds on home page only)
-- **Gesture Feedback**: "Swipe left detected", "Swipe up detected", etc.
-- **Navigation Limits**: "Already at the first page", "Already at the last page"
-- **Selection Confirmation**: "Confirming selection for [Page Name]"
+#### **Smart Announcement Management:**
+- **Individual Timers**: Each page has its own announcement timer
+- **Lifecycle Management**: Proper cleanup when leaving pages
+- **No Conflicts**: Announcements pause during navigation transitions
+- **Memory Efficient**: Automatic disposal of resources
 
-### 🔄 Integration with Existing Features:
-- **TTS Service**: Leverages existing `flutter_tts` package
-- **Vibration Support**: Uses existing `vibration` package
-- **Accessibility Service**: Integrates with existing navigation accessibility features
+### 📱 User Experience Features
+
+#### **Visual Indicators:**
+- **Gesture Toggle Button**: Enable/disable gestures on each page
+- **Gesture Instruction Panels**: Visual guide showing available gestures
+- **Subtitle Hints**: Each feature button shows the associated gesture
+
+#### **Haptic Feedback:**
+- **Swipe Gestures**: 100ms vibration
+- **Upward Swipe**: Pattern vibration (50ms x 5)
+- **Downward Line**: Double vibration pattern (100-50-100ms)
 
 ## Usage
 
-1. **Enable Gestures**: Tap the gesture icon in the top-right corner
-2. **Navigate**: Use swipe gestures to move between pages
-3. **Access Profile**: Draw a downward line to open your profile
-4. **Confirm Selection**: Swipe upward to go to the current page
-5. **Listen**: The app will announce the current page every 5 seconds while on the home page
+### **Getting Started:**
+1. **Enable Gestures**: Tap the gesture icon in the top-right corner of any page
+2. **Listen for Instructions**: Each page will announce available gestures when loaded
+3. **Navigate Efficiently**: Use gestures for hands-free navigation
 
-## Accessibility Benefits
+### **Navigation Flow:**
+1. **Home Page**: Swipe left/right to browse features, swipe up to enter selected page
+2. **Feature Pages**: Swipe up/down to access specific functions, swipe left to return
+3. **Profile Access**: Draw downward line from any main page to access user profile
+
+### **Audio Guidance:**
+- **Home Page**: Continuous page announcements every 5 seconds
+- **Feature Pages**: Feature descriptions every 8 seconds
+- **Gesture Help**: Available gestures announced on page entry
+
+## Accessibility Design Principles
 
 This gesture system is specifically designed for blind users by providing:
-- **Non-visual Navigation**: No need to locate specific buttons
-- **Consistent Feedback**: Audio and haptic confirmation for every action
-- **Simple Gestures**: Easy-to-remember movement patterns
-- **Context-Aware Announcements**: Page announcements only on home page to avoid interruptions
 
-## Technical Requirements
+### **Non-visual Navigation**: 
+- No need to locate specific buttons or UI elements
+- Gesture-based interaction works from anywhere on screen
 
-- Flutter SDK 3.7.0+
-- Permissions for microphone and vibration
-- Text-to-Speech support
-- Touch screen capability
+### **Consistent Feedback**: 
+- Audio confirmation for every action
+- Haptic vibration patterns for tactile feedback
 
-## Dependencies
+### **Simple Gesture Patterns**: 
+- Easy-to-remember directional movements
+- Logical gesture-to-function mapping
 
-The gesture recognition feature uses these existing packages:
-- `flutter_tts`: For text-to-speech announcements
-- `vibration`: For haptic feedback
-- `dart:math`: For gesture calculation algorithms
+### **Context-Aware Announcements**: 
+- Smart announcement system prevents audio overlap
+- Page-specific content helps maintain orientation
 
----
+### **Reliable Recognition**:
+- Configurable sensitivity parameters
+- Robust gesture detection algorithms
+- Fallback to traditional button navigation
 
-*This accessibility feature makes the app more inclusive and user-friendly for individuals with visual impairments.*
+## Technical Architecture
+
+### **Gesture Recognition Service:**
+- Singleton pattern for consistent state management
+- Real-time gesture analysis with configurable parameters
+- Callback-based architecture for responsive UI updates
+
+### **Announcement Management:**
+- Independent timer systems for each page
+- Proper lifecycle management to prevent memory leaks
+- Smart pausing/resuming during page transitions
+
+### **Integration Pattern:**
+- Consistent implementation across all pages
+- Shared gesture service with page-specific configurations
+- Unified error handling and fallback mechanisms
+
+This comprehensive gesture recognition system transforms the app into a truly accessible platform where blind users can navigate efficiently and confidently through all features using simple, intuitive gestures.

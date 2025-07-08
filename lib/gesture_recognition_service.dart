@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:vibration/vibration.dart';
@@ -28,6 +27,10 @@ class GestureRecognitionService {
   final List<GesturePoint> _gesturePoints = [];
   bool _isInitialized = false;
   bool _isRecording = false;
+  
+  // Global announcement management
+  static String? _currentActivePageId;
+  static bool _isAnnouncementActive = false;
   
   // Gesture detection parameters
   static const double _minSwipeDistance = 100.0;
@@ -224,6 +227,34 @@ class GestureRecognitionService {
     speak(message);
   }
 
+  // Global announcement management methods
+  bool setActiveAnnouncementSource(String pageId) {
+    if (_isAnnouncementActive && _currentActivePageId != pageId) {
+      // Another page is already making announcements
+      return false;
+    }
+    _currentActivePageId = pageId;
+    _isAnnouncementActive = true;
+    return true;
+  }
+  
+  void clearActiveAnnouncementSource(String pageId) {
+    if (_currentActivePageId == pageId) {
+      _currentActivePageId = null;
+      _isAnnouncementActive = false;
+    }
+  }
+  
+  bool canMakeAnnouncements(String pageId) {
+    return !_isAnnouncementActive || _currentActivePageId == pageId;
+  }
+  
+  void stopAllAnnouncements() {
+    _flutterTts.stop();
+    _currentActivePageId = null;
+    _isAnnouncementActive = false;
+  }
+
   // Speak text
   Future<void> speak(String text) async {
     if (!_isInitialized) return;
@@ -234,8 +265,11 @@ class GestureRecognitionService {
     }
   }
 
-  // Announce current page
-  Future<void> announceCurrentPage(String pageName) async {
+  // Announce current page (for announcements that respect the active page)
+  Future<void> announceCurrentPage(String pageName, {String? pageId}) async {
+    if (pageId != null && !canMakeAnnouncements(pageId)) {
+      return; // Another page is making announcements
+    }
     await speak('Current page: $pageName');
   }
 

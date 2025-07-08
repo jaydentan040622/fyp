@@ -2,13 +2,183 @@ import 'dart:core';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_ui_auth/firebase_ui_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:vibration/vibration.dart';
 import 'accountModule/user_profile.dart';
 import 'imageProcessingModule/image_processing_page.dart';
 import 'navigationModule/navigation_page.dart';
-import 'navigationModule/gesture_recognition_service.dart';
 import 'crowdsourcingModule/crowdsourcing_page.dart';
+
+// Dedicated gesture types for home page
+enum HomeGestureType {
+  swipeLeft,
+  swipeRight,
+  swipeUp,
+  downwardLine,
+  unknown
+}
+
+class HomeGesturePoint {
+  final double x;
+  final double y;
+  final DateTime timestamp;
+  HomeGesturePoint(this.x, this.y, this.timestamp);
+}
+
+// Dedicated gesture service for home page only
+class HomeGestureService {
+  static final HomeGestureService _instance = HomeGestureService._internal();
+  factory HomeGestureService() => _instance;
+  HomeGestureService._internal();
+
+  final FlutterTts _flutterTts = FlutterTts();
+  final List<HomeGesturePoint> _gesturePoints = [];
+  bool _isInitialized = false;
+  bool _isRecording = false;
+  Function(HomeGestureType)? _onGestureDetected;
+  
+  // Gesture detection parameters
+  static const double _minSwipeDistance = 100.0;
+  static const double _maxSwipeVerticalDeviation = 50.0;
+  static const double _minDownwardLineDistance = 80.0;
+  static const double _maxDownwardLineHorizontalDeviation = 30.0;
+  static const double _minUpwardSwipeDistance = 100.0;
+  static const double _maxUpwardSwipeHorizontalDeviation = 50.0;
+
+  Future<void> initialize() async {
+    try {
+      await _flutterTts.setLanguage('en-US');
+      await _flutterTts.setSpeechRate(0.6);
+      await _flutterTts.setVolume(1.0);
+      await _flutterTts.setPitch(1.0);
+      _isInitialized = true;
+      debugPrint('HomeGestureService initialized successfully');
+    } catch (e) {
+      debugPrint('Error initializing HomeGestureService: $e');
+    }
+  }
+
+  void setGestureCallback(Function(HomeGestureType) callback) {
+    _onGestureDetected = callback;
+  }
+
+  Future<void> speak(String text) async {
+    if (!_isInitialized) return;
+    try {
+      await _flutterTts.stop();
+      await _flutterTts.speak(text);
+    } catch (e) {
+      debugPrint('Error speaking: $e');
+    }
+  }
+
+  void startGesture(Offset position) {
+    _isRecording = true;
+    _gesturePoints.clear();
+    _gesturePoints.add(HomeGesturePoint(position.dx, position.dy, DateTime.now()));
+  }
+
+  void updateGesture(Offset position) {
+    if (!_isRecording) return;
+    _gesturePoints.add(HomeGesturePoint(position.dx, position.dy, DateTime.now()));
+  }
+
+  void endGesture() {
+    if (!_isRecording) return;
+    _isRecording = false;
+    
+    if (_gesturePoints.length < 2) return;
+
+    HomeGestureType detectedGesture = _analyzeGesture();
+    
+    if (detectedGesture != HomeGestureType.unknown) {
+      _triggerHapticFeedback(detectedGesture);
+      _announceGesture(detectedGesture);
+      _onGestureDetected?.call(detectedGesture);
+    }
+    
+    _gesturePoints.clear();
+  }
+
+  HomeGestureType _analyzeGesture() {
+    if (_gesturePoints.length < 2) return HomeGestureType.unknown;
+
+    double startX = _gesturePoints.first.x;
+    double endX = _gesturePoints.last.x;
+    double startY = _gesturePoints.first.y;
+    double endY = _gesturePoints.last.y;
+
+    double horizontalDistance = (endX - startX).abs();
+    double verticalDistance = (endY - startY).abs();
+
+    // Check for horizontal swipe (left/right)
+    if (horizontalDistance >= _minSwipeDistance && 
+        verticalDistance <= _maxSwipeVerticalDeviation) {
+      return endX > startX ? HomeGestureType.swipeRight : HomeGestureType.swipeLeft;
+    }
+
+    // Check for upward swipe
+    if (verticalDistance >= _minUpwardSwipeDistance && 
+        horizontalDistance <= _maxUpwardSwipeHorizontalDeviation) {
+      if (endY < startY) return HomeGestureType.swipeUp;
+    }
+
+    // Check for downward line
+    double verticalMovement = endY - startY;
+    if (verticalMovement >= _minDownwardLineDistance && 
+        horizontalDistance <= _maxDownwardLineHorizontalDeviation) {
+      return HomeGestureType.downwardLine;
+    }
+
+    return HomeGestureType.unknown;
+  }
+
+  void _triggerHapticFeedback(HomeGestureType gestureType) {
+    switch (gestureType) {
+      case HomeGestureType.swipeLeft:
+      case HomeGestureType.swipeRight:
+        Vibration.vibrate(duration: 100);
+        break;
+      case HomeGestureType.swipeUp:
+        Vibration.vibrate(pattern: [50, 50, 50, 50, 50]);
+        break;
+      case HomeGestureType.downwardLine:
+        Vibration.vibrate(pattern: [100, 50, 100]);
+        break;
+      default:
+        break;
+    }
+  }
+
+  void _announceGesture(HomeGestureType gestureType) {
+    String message = '';
+    switch (gestureType) {
+      case HomeGestureType.swipeLeft:
+        message = 'Swipe left detected';
+        break;
+      case HomeGestureType.swipeRight:
+        message = 'Swipe right detected';
+        break;
+      case HomeGestureType.swipeUp:
+        message = 'Swipe up detected';
+        break;
+      case HomeGestureType.downwardLine:
+        message = 'Downward line detected';
+        break;
+      default:
+        return;
+    }
+    speak(message);
+  }
+
+  void dispose() {
+    _flutterTts.stop();
+    _gesturePoints.clear();
+    _onGestureDetected = null;
+    _isInitialized = false;
+  }
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,14 +187,16 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, RouteAware {
   final PageController _pageController = PageController();
-  final GestureRecognitionService _gestureService = GestureRecognitionService();
+  final HomeGestureService _gestureService = HomeGestureService();
   int _currentPage = 0;
   final int _totalPages = 3;
   Timer? _pageAnnouncementTimer;
+  Timer? _initializationTimer;
   bool _gestureEnabled = true;
   bool _isInitialized = false;
+  bool _isActive = false;
   
   final List<String> _pageNames = [
     'Image Processing',
@@ -35,85 +207,137 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeGestureService();
-    _startPageAnnouncements();
+    WidgetsBinding.instance.addObserver(this);
+    _initializeSystem();
   }
   
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     _pageAnnouncementTimer?.cancel();
+    _initializationTimer?.cancel();
     _gestureService.dispose();
     super.dispose();
   }
 
-  Future<void> _initializeGestureService() async {
-    try {
-      await _gestureService.initialize();
-      
-      // Set gesture callback
-      _gestureService.setGestureCallback((GestureType gesture) {
-        _handleGesture(gesture);
-      });
-      
-      // Set debug callback for development
-      _gestureService.setDebugCallback((String message) {
-        debugPrint('Gesture Debug: $message');
-      });
-      
-      setState(() {
-        _isInitialized = true;
-      });
-      
-      // Welcome message
-      Future.delayed(const Duration(seconds: 1), () {
-        if (mounted) {
-          _gestureService.announceCurrentPage(_pageNames[_currentPage]);
-                               _gestureService.speak(
-            'Gesture navigation enabled. Swipe left or right to navigate pages, '
-            'draw a line down to open profile, or swipe up to confirm selection.'
-          );
-        }
-      });
-      
-    } catch (e) {
-      debugPrint('Error initializing gesture service: $e');
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _checkAndReinitialize();
     }
   }
 
-  void _startPageAnnouncements() {
-    _pageAnnouncementTimer?.cancel();
-    _pageAnnouncementTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (mounted && _isInitialized) {
-        _gestureService.announceCurrentPage(_pageNames[_currentPage]);
+  void _initializeSystem() {
+    debugPrint('HomeScreen: Initializing system...');
+    _isActive = true;
+    
+    // Cancel any existing initialization
+    _initializationTimer?.cancel();
+    
+    _initializationTimer = Timer(const Duration(milliseconds: 500), () async {
+      if (!mounted || !_isActive) return;
+      
+      try {
+        // Initialize gesture service
+        await _gestureService.initialize();
+        
+        if (!mounted || !_isActive) return;
+        
+        // Set up gesture callback
+        _gestureService.setGestureCallback((HomeGestureType gesture) {
+          if (mounted && _isActive) {
+            _handleGesture(gesture);
+          }
+        });
+        
+        if (!mounted || !_isActive) return;
+        
+        setState(() {
+          _isInitialized = true;
+        });
+        
+        // Start announcements
+        _startPageAnnouncements();
+        
+        // Welcome message
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted && _isActive) {
+            _gestureService.speak('Welcome to the main page. ${_pageNames[_currentPage]}');
+            Future.delayed(const Duration(seconds: 2), () {
+              if (mounted && _isActive) {
+                _gestureService.speak(
+                  'Gesture navigation enabled. Swipe left or right to navigate pages, '
+                  'draw a line down to open profile, or swipe up to confirm selection.'
+                );
+              }
+            });
+          }
+        });
+        
+        debugPrint('HomeScreen: System initialized successfully');
+      } catch (e) {
+        debugPrint('HomeScreen: Error initializing system: $e');
+        // Retry initialization
+        if (mounted && _isActive) {
+          Future.delayed(const Duration(seconds: 2), () {
+            if (mounted && _isActive) _initializeSystem();
+          });
+        }
       }
     });
   }
 
-  void _pausePageAnnouncements() {
-    _pageAnnouncementTimer?.cancel();
-  }
-
-  void _resumePageAnnouncements() {
-    if (mounted && _isInitialized) {
-      _startPageAnnouncements();
+  void _checkAndReinitialize() {
+    debugPrint('HomeScreen: Checking and reinitializing...');
+    if (!mounted) return;
+    
+    // Check if we're the current route
+    if (ModalRoute.of(context)?.isCurrent == true) {
+      _isActive = true;
+      if (!_isInitialized || 
+          _pageAnnouncementTimer == null || 
+          !_pageAnnouncementTimer!.isActive) {
+        debugPrint('HomeScreen: Reinitializing due to inactive state');
+        _initializeSystem();
+      }
     }
   }
 
-  void _handleGesture(GestureType gesture) {
-    if (!_gestureEnabled) return;
+  void _startPageAnnouncements() {
+    if (!mounted || !_isActive) return;
+    
+    _pageAnnouncementTimer?.cancel();
+    _pageAnnouncementTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (mounted && _isInitialized && _isActive) {
+        _gestureService.speak('Current page: ${_pageNames[_currentPage]}');
+      }
+    });
+    debugPrint('HomeScreen: Page announcements started');
+  }
+
+  void _pausePageAnnouncements() {
+    _pageAnnouncementTimer?.cancel();
+    _isActive = false;
+    debugPrint('HomeScreen: Page announcements paused');
+  }
+
+  void _handleGesture(HomeGestureType gesture) {
+    if (!_gestureEnabled || !_isInitialized || !_isActive) return;
+    
+    debugPrint('HomeScreen: Handling gesture: $gesture');
     
     switch (gesture) {
-      case GestureType.swipeLeft:
+      case HomeGestureType.swipeLeft:
         _previousPage();
         break;
-      case GestureType.swipeRight:
+      case HomeGestureType.swipeRight:
         _nextPage();
         break;
-      case GestureType.swipeUp:
+      case HomeGestureType.swipeUp:
         _confirmPageSelection();
         break;
-      case GestureType.downwardLine:
+      case HomeGestureType.downwardLine:
         _openProfile();
         break;
       default:
@@ -129,7 +353,7 @@ class _HomeScreenState extends State<HomeScreen> {
         curve: Curves.easeInOut,
       );
     } else {
-              _gestureService.speak('Already at the last page');
+      _gestureService.speak('Already at the last page');
     }
   }
 
@@ -141,7 +365,7 @@ class _HomeScreenState extends State<HomeScreen> {
         curve: Curves.easeInOut,
       );
     } else {
-              _gestureService.speak('Already at the first page');
+      _gestureService.speak('Already at the first page');
     }
   }
 
@@ -154,8 +378,8 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context) => const UserProfileScreen(),
       ),
     ).then((_) {
-      // Resume announcements when returning to home page
-      _resumePageAnnouncements();
+      // Reinitialize when returning
+      _initializeSystem();
     });
   }
 
@@ -163,69 +387,68 @@ class _HomeScreenState extends State<HomeScreen> {
     _gestureService.speak('Confirming selection for ${_pageNames[_currentPage]}');
     _pausePageAnnouncements();
     
-    // Navigate to the selected page
+    Widget targetPage;
     switch (_currentPage) {
       case 0:
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const ImageProcessingPage(),
-          ),
-        ).then((_) {
-          _resumePageAnnouncements();
-        });
+        targetPage = const ImageProcessingPage();
         break;
       case 1:
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const CrowdsourcingPage(),
-          ),
-        ).then((_) {
-          _resumePageAnnouncements();
-        });
+        targetPage = const CrowdsourcingPage();
         break;
       case 2:
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const NavigationPage(),
-          ),
-        ).then((_) {
-          _resumePageAnnouncements();
-        });
+        targetPage = const NavigationPage();
         break;
+      default:
+        return;
     }
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => targetPage),
+    ).then((_) {
+      // Reinitialize when returning
+      _initializeSystem();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    // Check if we're becoming active again
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        if (!_isActive) {
+          debugPrint('HomeScreen: Detected return to home, reinitializing...');
+          _initializeSystem();
+        }
+      }
+    });
+    
     return Scaffold(
       body: SafeArea(
         child: GestureDetector(
           onPanStart: (details) {
-            if (_gestureEnabled && _isInitialized) {
+            if (_gestureEnabled && _isInitialized && _isActive) {
               _gestureService.startGesture(details.localPosition);
             }
           },
           onPanUpdate: (details) {
-            if (_gestureEnabled && _isInitialized) {
+            if (_gestureEnabled && _isInitialized && _isActive) {
               _gestureService.updateGesture(details.localPosition);
             }
           },
           onPanEnd: (details) {
-            if (_gestureEnabled && _isInitialized) {
+            if (_gestureEnabled && _isInitialized && _isActive) {
               _gestureService.endGesture();
             }
           },
           child: Column(
-            children: [
+          children: [
               // Header with welcome message and gesture toggle
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                child: Row(
-                  children: [
-                    const Expanded(child: UserWidget()),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Row(
+                children: [
+                  const Expanded(child: UserWidget()),
                     // Gesture toggle button
                     IconButton(
                       icon: Icon(
@@ -242,104 +465,104 @@ class _HomeScreenState extends State<HomeScreen> {
                       },
                       tooltip: 'Toggle gesture navigation',
                     ),
-                  ],
-                ),
+                ],
               ),
-              
-              // Main content with PageView
-              Expanded(
-                child: PageView(
-                  controller: _pageController,
-                  onPageChanged: (index) {
-                    setState(() {
-                      _currentPage = index;
-                    });
+            ),
+            
+            // Main content with PageView
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: (index) {
+                  setState(() {
+                    _currentPage = index;
+                  });
                     
                     // Announce new page
                     if (_isInitialized) {
                       Future.delayed(const Duration(milliseconds: 300), () {
-                        _gestureService.announceCurrentPage(_pageNames[_currentPage]);
+                        _gestureService.speak('Current page: ${_pageNames[_currentPage]}');
                       });
                     }
-                  },
-                  children: const [
-                    // Image Processing Module
-                    ImageProcessingModule(),
-                    
-                    // Crowdsourcing Module
-                    CrowdsourcingModule(),
-                    
-                    // Navigation Module
-                    NavigationModule(),
-                  ],
-                ),
+                },
+                children: const [
+                  // Image Processing Module
+                  ImageProcessingModule(),
+                  
+                  // Crowdsourcing Module
+                  CrowdsourcingModule(),
+                  
+                  // Navigation Module
+                  NavigationModule(),
+                ],
               ),
-              
-              // Page indicator and navigation arrows
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Previous arrow
-                    IconButton(
-                      icon: Icon(
-                        Icons.arrow_back_ios_rounded,
-                        color: _currentPage > 0 ? const Color(0xFF2561FA) : Colors.grey.shade400,
-                      ),
-                      onPressed: _currentPage > 0 ? _previousPage : null,
+            ),
+            
+            // Page indicator and navigation arrows
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Previous arrow
+                  IconButton(
+                    icon: Icon(
+                      Icons.arrow_back_ios_rounded,
+                      color: _currentPage > 0 ? const Color(0xFF2561FA) : Colors.grey.shade400,
                     ),
-                    
-                    // Page indicators
-                    ...List.generate(
-                      _totalPages,
-                      (index) => Container(
-                        width: 10,
-                        height: 10,
-                        margin: const EdgeInsets.symmetric(horizontal: 8),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _currentPage == index
-                              ? const Color(0xFF2561FA)
-                              : Colors.grey.shade300,
-                        ),
+                    onPressed: _currentPage > 0 ? _previousPage : null,
+                  ),
+                  
+                  // Page indicators
+                  ...List.generate(
+                    _totalPages,
+                    (index) => Container(
+                      width: 10,
+                      height: 10,
+                      margin: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _currentPage == index
+                            ? const Color(0xFF2561FA)
+                            : Colors.grey.shade300,
                       ),
                     ),
-                    
-                    // Next arrow
-                    IconButton(
-                      icon: Icon(
-                        Icons.arrow_forward_ios_rounded,
-                        color: _currentPage < _totalPages - 1 ? const Color(0xFF2561FA) : Colors.grey.shade400,
-                      ),
-                      onPressed: _currentPage < _totalPages - 1 ? _nextPage : null,
+                  ),
+                  
+                  // Next arrow
+                  IconButton(
+                    icon: Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: _currentPage < _totalPages - 1 ? const Color(0xFF2561FA) : Colors.grey.shade400,
                     ),
-                  ],
-                ),
+                    onPressed: _currentPage < _totalPages - 1 ? _nextPage : null,
+                  ),
+                ],
               ),
-              
-              // Bottom user profile button
-              Padding(
-                padding: const EdgeInsets.only(bottom: 20),
-                child: ElevatedButton.icon(
+            ),
+            
+            // Bottom user profile button
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: ElevatedButton.icon(
                   onPressed: _openProfile,
-                  icon: const Icon(Icons.person, color: Colors.white),
-                  label: const Text(
-                    'User Profile',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+                icon: const Icon(Icons.person, color: Colors.white),
+                label: const Text(
+                  'User Profile',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
                   ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2561FA),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2561FA),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
                   ),
                 ),
               ),
+            ),
               
               // Gesture instruction panel (appears when gesture is enabled)
               if (_gestureEnabled && _isInitialized)
@@ -363,7 +586,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               
               const SizedBox(height: 10),
-            ],
+          ],
           ),
         ),
       ),
@@ -495,7 +718,7 @@ class ImageProcessingModule extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const ImageProcessingPage(),
+                  builder: (context) => const CrowdsourcingPage(),
                 ),
               );
             },
