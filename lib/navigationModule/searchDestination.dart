@@ -10,6 +10,8 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'dart:math';
 
+import 'navigation_page.dart';
+
 class SearchDestination extends StatefulWidget {
   const SearchDestination({super.key});
 
@@ -71,7 +73,7 @@ class _SearchDestinationState extends State<SearchDestination> {
   Future<void> _speakGuide() async {
     await flutterTts.stop();
     await flutterTts.speak(
-        "Welcome to the search destination page. Swipe down to start voice input, or type your destination in the search box."
+        "Welcome to the search destination page. Swipe down to start voice input, or type your destination in the search box. Swipe left to go back, swipe right to go to the main navigation page."
     );
   }
 
@@ -494,6 +496,21 @@ class _SearchDestinationState extends State<SearchDestination> {
                   _listen();
                 }
               },
+              onHorizontalDragEnd: (details) {
+                if (details.primaryVelocity != null) {
+                  if (details.primaryVelocity! > 0) {
+                    // Swipe left-to-right: go back
+                    Navigator.pop(context);
+                  } else if (details.primaryVelocity! < 0) {
+                    // Swipe right-to-left: go to NavigationPage
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (context) => NavigationPage()),
+                          (route) => false,
+                    );
+                  }
+                }
+              },
               child: Container(
                 color: const Color(0xFFF0F4F8), // Light blue-grey background
                 child: Column(
@@ -584,22 +601,7 @@ class _SearchDestinationState extends State<SearchDestination> {
                                       title: Text(search['name']),
                                       subtitle: Text(search['address']),
                                       onTap: () async {
-                                        final position = await _getCurrentPosition();
-                                        if (position != null && mounted) {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (context) => TransportRoutes(
-                                                destination: LatLng(
-                                                  search['latitude'],
-                                                  search['longitude'],
-                                                ),
-                                                destinationName: search['name'],
-                                                currentLocation: position,
-                                              ),
-                                            ),
-                                          );
-                                        }
+                                        _goToRouteForSuggestion(search);
                                       },
                                     );
                                   },
@@ -768,6 +770,15 @@ class _SearchDestinationState extends State<SearchDestination> {
         }
       }
       if (lat != null && lng != null) {
+        // Save to recent searches before navigating
+        if (suggestion['name'] != null && suggestion['address'] != null) {
+          await _saveToRecentSearches(
+            suggestion['name'],
+            suggestion['address'],
+            lat,
+            lng,
+          );
+        }
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -803,7 +814,17 @@ class _SearchDestinationState extends State<SearchDestination> {
               setState(() => _isListening = false);
               _speech.stop();
               if (_suggestions.isNotEmpty) {
-                _goToRouteForSuggestion(_suggestions[0]);
+                final suggestion = _suggestions[0];
+                _goToRouteForSuggestion(suggestion);
+                // Save to recent searches
+                if (suggestion['name'] != null && suggestion['address'] != null && suggestion['latitude'] != null && suggestion['longitude'] != null) {
+                  await _saveToRecentSearches(
+                    suggestion['name'],
+                    suggestion['address'],
+                    suggestion['latitude'] is double ? suggestion['latitude'] : double.tryParse(suggestion['latitude'].toString()),
+                    suggestion['longitude'] is double ? suggestion['longitude'] : double.tryParse(suggestion['longitude'].toString()),
+                  );
+                }
               }
             }
           },

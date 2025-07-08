@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_tts/flutter_tts.dart';
 
+import 'navigation_page.dart';
+
 class TransportRoutes extends StatefulWidget {
   final LatLng destination;
   final String destinationName;
@@ -262,7 +264,7 @@ class _TransportRoutesState extends State<TransportRoutes> {
 
           // Speak route summary after routes are loaded
           if (mounted) {
-            _speakRouteSummary();
+            _speakRouteSummary(_routes);
           }
         }
       }
@@ -270,7 +272,7 @@ class _TransportRoutesState extends State<TransportRoutes> {
       print('Error loading routes: $e');
       // Fallback if API fails
       if (mounted) {
-        _speakRouteSummary();
+        _speakRouteSummary(_routes);
       }
     } finally {
       setState(() {
@@ -281,16 +283,18 @@ class _TransportRoutesState extends State<TransportRoutes> {
     _drawRoutes();
   }
 
-  Future<void> _speakRouteSummary() async {
-    if (_routes.isEmpty) {
-      await flutterTts.speak("No routes found to ${widget.destinationName}. Please try a different location or transportation mode.");
+  Future<void> _speakRouteSummary(List<Map<String, dynamic>> routes) async {
+    if (routes.isEmpty) {
+      await flutterTts.speak("No routes found to your destination. Please try a different location or transportation mode.");
       return;
     }
 
-    String speechText = "I found ${_routes.length} route options to ${widget.destinationName}. ";
+    String speechText = "You are on the transport route page. Swipe left to go back, swipe right to go to the main navigation page. ";
+    speechText += "I found ";
+    speechText += "${routes.length} route options to your destination. ";
 
-    for (int i = 0; i < _routes.length && i < 3; i++) {
-      final route = _routes[i];
+    for (int i = 0; i < routes.length && i < 3; i++) {
+      final route = routes[i];
       final routeNumber = i + 1;
       final duration = route['duration'] ?? 'unknown time';
       final routeName = route['route'] ?? 'Route $routeNumber';
@@ -298,8 +302,8 @@ class _TransportRoutesState extends State<TransportRoutes> {
       speechText += "Route $routeNumber: $routeName, takes about $duration. ";
     }
 
-    if (_routes.length > 3) {
-      speechText += "There are ${_routes.length - 3} more route options available. ";
+    if (routes.length > 3) {
+      speechText += "There are ${routes.length - 3} more route options available. ";
     }
 
     speechText += "Please select your preferred route from the list below.";
@@ -465,7 +469,7 @@ class _TransportRoutesState extends State<TransportRoutes> {
                         _isSpeaking ? Icons.volume_off : Icons.volume_up,
                         color: Colors.white,
                       ),
-                      onPressed: _isSpeaking ? null : _speakRouteSummary,
+                      onPressed: _isSpeaking ? null : () => _speakRouteSummary(_routes),
                     ),
                   ],
                 ),
@@ -474,104 +478,188 @@ class _TransportRoutesState extends State<TransportRoutes> {
           ),
           // Main content
           Expanded(
-            child: Container(
-              color: const Color(0xFFF0F4F8), // Light blue-grey background
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: MediaQuery.of(context).size.height / 3,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: GoogleMap(
-                        initialCameraPosition: CameraPosition(
-                          target: LatLng(
-                            widget.currentLocation.latitude,
-                            widget.currentLocation.longitude,
+            child: GestureDetector(
+              onHorizontalDragEnd: (details) async {
+                if (details.primaryVelocity != null) {
+                  if (details.primaryVelocity! > 0) {
+                    // Swipe left-to-right: go back
+                    await flutterTts.stop();
+                    Navigator.pop(context);
+                  } else if (details.primaryVelocity! < 0) {
+                    // Swipe right-to-left: go to NavigationPage
+                    await flutterTts.stop();
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (context) => NavigationPage()),
+                          (route) => false,
+                    );
+                  }
+                }
+              },
+              child: Container(
+                color: const Color(0xFFF0F4F8), // Light blue-grey background
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: MediaQuery.of(context).size.height / 3,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: GoogleMap(
+                          initialCameraPosition: CameraPosition(
+                            target: LatLng(
+                              widget.currentLocation.latitude,
+                              widget.currentLocation.longitude,
+                            ),
+                            zoom: 12,
                           ),
-                          zoom: 12,
+                          onMapCreated: _onMapCreated,
+                          markers: _markers,
+                          polylines: _polylines,
+                          myLocationEnabled: true,
+                          myLocationButtonEnabled: true,
+                          zoomControlsEnabled: true,
+                          mapToolbarEnabled: true,
+                          compassEnabled: true,
                         ),
-                        onMapCreated: _onMapCreated,
-                        markers: _markers,
-                        polylines: _polylines,
-                        myLocationEnabled: true,
-                        myLocationButtonEnabled: true,
-                        zoomControlsEnabled: true,
-                        mapToolbarEnabled: true,
-                        compassEnabled: true,
                       ),
                     ),
-                  ),
-                  Expanded(
-                    child: _isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : ListView.builder(
-                      itemCount: _routes.length,
-                      itemBuilder: (context, index) {
-                        final route = _routes[index];
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          child: InkWell(
-                            onTap: () => _speakDetailedRoute(index),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        _getTransportIcon(route['type']),
-                                        color: Colors.blue,
-                                        size: 32,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              route['route'],
-                                              style: const TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
+                    Expanded(
+                      child: _isLoading
+                          ? const Center(child: CircularProgressIndicator())
+                          : ListView.builder(
+                        itemCount: _routes.length,
+                        itemBuilder: (context, index) {
+                          final route = _routes[index];
+                          return Card(
+                            margin: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: InkWell(
+                              onTap: () => _speakDetailedRoute(index),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          _getTransportIcon(route['type']),
+                                          color: Colors.blue,
+                                          size: 32,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                route['route'],
+                                                style: const TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
                                               ),
-                                            ),
-                                            Text(
-                                              'Total: ${route['duration']}',
-                                              style: const TextStyle(
-                                                color: Colors.grey,
+                                              Text(
+                                                'Total: ${route['duration']}',
+                                                style: const TextStyle(
+                                                  color: Colors.grey,
+                                                ),
                                               ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.blue.shade50,
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: Text(
-                                          '${route['stops']} trips',
-                                          style: TextStyle(
-                                            color: Colors.blue.shade700,
-                                            fontWeight: FontWeight.bold,
+                                            ],
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-                                  if (route['transitSteps'] != null && route['transitSteps'].isNotEmpty)
-                                    ...route['transitSteps'].map<Widget>((step) {
-                                      // For walking trips, show simplified view
-                                      if (step['vehicle_type'] == 'WALKING') {
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue.shade50,
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Text(
+                                            '${route['stops']} trips',
+                                            style: TextStyle(
+                                              color: Colors.blue.shade700,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    if (route['transitSteps'] != null && route['transitSteps'].isNotEmpty)
+                                      ...route['transitSteps'].map<Widget>((step) {
+                                        // For walking trips, show simplified view
+                                        if (step['vehicle_type'] == 'WALKING') {
+                                          return Padding(
+                                            padding: const EdgeInsets.only(bottom: 8),
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  width: 24,
+                                                  height: 24,
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.blue.shade50,
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  child: const Icon(
+                                                    Icons.directions_walk,
+                                                    size: 16,
+                                                    color: Colors.blue,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Row(
+                                                        children: [
+                                                          Expanded(
+                                                            child: const Text(
+                                                              'Walking',
+                                                              style: TextStyle(
+                                                                fontWeight: FontWeight.w500,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          Container(
+                                                            padding: const EdgeInsets.symmetric(
+                                                              horizontal: 8,
+                                                              vertical: 2,
+                                                            ),
+                                                            decoration: BoxDecoration(
+                                                              color: Colors.grey.shade100,
+                                                              borderRadius: BorderRadius.circular(8),
+                                                            ),
+                                                            child: Text(
+                                                              step['trip_time'] ?? '15 mins',
+                                                              style: TextStyle(
+                                                                color: Colors.grey.shade700,
+                                                                fontSize: 12,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      Text(
+                                                        step['walking_distance'] ?? '500m',
+                                                        style: const TextStyle(
+                                                          color: Colors.grey,
+                                                          fontSize: 13,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }
+
                                         return Padding(
                                           padding: const EdgeInsets.only(bottom: 8),
                                           child: Row(
@@ -583,10 +671,10 @@ class _TransportRoutesState extends State<TransportRoutes> {
                                                   color: Colors.blue.shade50,
                                                   shape: BoxShape.circle,
                                                 ),
-                                                child: const Icon(
-                                                  Icons.directions_walk,
+                                                child: Icon(
+                                                  _getTransportIcon(step['vehicle_type']),
                                                   size: 16,
-                                                  color: Colors.blue,
+                                                  color: Colors.blue.shade700,
                                                 ),
                                               ),
                                               const SizedBox(width: 12),
@@ -597,9 +685,9 @@ class _TransportRoutesState extends State<TransportRoutes> {
                                                     Row(
                                                       children: [
                                                         Expanded(
-                                                          child: const Text(
-                                                            'Walking',
-                                                            style: TextStyle(
+                                                          child: Text(
+                                                            step['line_name'],
+                                                            style: const TextStyle(
                                                               fontWeight: FontWeight.w500,
                                                             ),
                                                           ),
@@ -624,127 +712,62 @@ class _TransportRoutesState extends State<TransportRoutes> {
                                                       ],
                                                     ),
                                                     Text(
-                                                      step['walking_distance'] ?? '500m',
+                                                      '${step['departure_stop']} → ${step['arrival_stop']}',
                                                       style: const TextStyle(
                                                         color: Colors.grey,
                                                         fontSize: 13,
                                                       ),
                                                     ),
+                                                    if (step['stations_between'] != null)
+                                                      Padding(
+                                                        padding: const EdgeInsets.only(top: 2),
+                                                        child: Text(
+                                                          '${step['stations_between']} stations to ${step['arrival_stop']}',
+                                                          style: TextStyle(
+                                                            color: Colors.grey.shade600,
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    if (step['walking_time'] != null)
+                                                      Padding(
+                                                        padding: const EdgeInsets.only(top: 4),
+                                                        child: Row(
+                                                          children: [
+                                                            const Icon(
+                                                              Icons.directions_walk,
+                                                              size: 14,
+                                                              color: Colors.grey,
+                                                            ),
+                                                            const SizedBox(width: 4),
+                                                            Text(
+                                                              step['walking_time'],
+                                                              style: const TextStyle(
+                                                                color: Colors.grey,
+                                                                fontSize: 12,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
                                                   ],
                                                 ),
                                               ),
                                             ],
                                           ),
                                         );
-                                      }
-
-                                      return Padding(
-                                        padding: const EdgeInsets.only(bottom: 8),
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width: 24,
-                                              height: 24,
-                                              decoration: BoxDecoration(
-                                                color: Colors.blue.shade50,
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: Icon(
-                                                _getTransportIcon(step['vehicle_type']),
-                                                size: 16,
-                                                color: Colors.blue.shade700,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Row(
-                                                    children: [
-                                                      Expanded(
-                                                        child: Text(
-                                                          step['line_name'],
-                                                          style: const TextStyle(
-                                                            fontWeight: FontWeight.w500,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      Container(
-                                                        padding: const EdgeInsets.symmetric(
-                                                          horizontal: 8,
-                                                          vertical: 2,
-                                                        ),
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.grey.shade100,
-                                                          borderRadius: BorderRadius.circular(8),
-                                                        ),
-                                                        child: Text(
-                                                          step['trip_time'] ?? '15 mins',
-                                                          style: TextStyle(
-                                                            color: Colors.grey.shade700,
-                                                            fontSize: 12,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  Text(
-                                                    '${step['departure_stop']} → ${step['arrival_stop']}',
-                                                    style: const TextStyle(
-                                                      color: Colors.grey,
-                                                      fontSize: 13,
-                                                    ),
-                                                  ),
-                                                  if (step['stations_between'] != null)
-                                                    Padding(
-                                                      padding: const EdgeInsets.only(top: 2),
-                                                      child: Text(
-                                                        '${step['stations_between']} stations to ${step['arrival_stop']}',
-                                                        style: TextStyle(
-                                                          color: Colors.grey.shade600,
-                                                          fontSize: 12,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  if (step['walking_time'] != null)
-                                                    Padding(
-                                                      padding: const EdgeInsets.only(top: 4),
-                                                      child: Row(
-                                                        children: [
-                                                          const Icon(
-                                                            Icons.directions_walk,
-                                                            size: 14,
-                                                            color: Colors.grey,
-                                                          ),
-                                                          const SizedBox(width: 4),
-                                                          Text(
-                                                            step['walking_time'],
-                                                            style: const TextStyle(
-                                                              color: Colors.grey,
-                                                              fontSize: 12,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }).toList(),
-                                  const SizedBox(height: 8),
-                                ],
+                                      }).toList(),
+                                    const SizedBox(height: 8),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
