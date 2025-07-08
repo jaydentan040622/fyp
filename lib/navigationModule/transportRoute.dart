@@ -289,7 +289,7 @@ class _TransportRoutesState extends State<TransportRoutes> {
       return;
     }
 
-    String speechText = "You are on the transport route page. Swipe left to go back, swipe right to go to the main navigation page. ";
+    String speechText = "You are on the transport route page. Swipe left to go back, swipe right to go to the main menu. ";
     speechText += "I found ";
     speechText += "${routes.length} route options to your destination. ";
 
@@ -481,12 +481,12 @@ class _TransportRoutesState extends State<TransportRoutes> {
             child: GestureDetector(
               onHorizontalDragEnd: (details) async {
                 if (details.primaryVelocity != null) {
-                  if (details.primaryVelocity! > 0) {
-                    // Swipe left-to-right: go back
+                  if (details.primaryVelocity! < 0) {
+                    // Swipe left (right-to-left): go back
                     await flutterTts.stop();
                     Navigator.pop(context);
-                  } else if (details.primaryVelocity! < 0) {
-                    // Swipe right-to-left: go to NavigationPage
+                  } else if (details.primaryVelocity! > 0) {
+                    // Swipe right (left-to-right): go to main menu
                     await flutterTts.stop();
                     Navigator.pushAndRemoveUntil(
                       context,

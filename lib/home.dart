@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:core';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -48,7 +49,7 @@ class HomeGestureService {
   Future<void> initialize() async {
     try {
       await _flutterTts.setLanguage('en-US');
-      await _flutterTts.setSpeechRate(0.6);
+      await _flutterTts.setSpeechRate(0.4);
       await _flutterTts.setVolume(1.0);
       await _flutterTts.setPitch(1.0);
       _isInitialized = true;

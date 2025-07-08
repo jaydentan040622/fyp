@@ -68,7 +68,7 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
   Future<void> _speakGuide() async {
     await flutterTts.stop();
     await flutterTts.speak(
-        "Welcome to the transportation page. Swipe up to search for a destination. Swipe down to check public transport availability. Swipe left to go back, swipe right to go to the main navigation page. You can also tap the top or bottom button."
+        "Welcome to the transportation page. Swipe up to search for a destination. Swipe down to check public transport availability. Swipe left to go back, swipe right to go to the main menu. You can also tap the top or bottom button."
     );
   }
 
@@ -143,12 +143,12 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
                     onVerticalDragEnd: _handleVerticalSwipe,
                     onHorizontalDragEnd: (details) async {
                       if (details.primaryVelocity != null) {
-                        if (details.primaryVelocity! > 0) {
-                          // Swipe left-to-right: go back
+                        if (details.primaryVelocity! < 0) {
+                          // Swipe left (right-to-left): go back
                           await flutterTts.stop();
                           Navigator.pop(context);
-                        } else if (details.primaryVelocity! < 0) {
-                          // Swipe right-to-left: go to NavigationPage
+                        } else if (details.primaryVelocity! > 0) {
+                          // Swipe right (left-to-right): go to main menu
                           await flutterTts.stop();
                           Navigator.pushAndRemoveUntil(
                             context,

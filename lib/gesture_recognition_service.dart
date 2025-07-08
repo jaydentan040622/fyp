@@ -50,7 +50,7 @@ class GestureRecognitionService {
     
     try {
       await _flutterTts.setLanguage('en-US');
-      await _flutterTts.setSpeechRate(0.6);
+      await _flutterTts.setSpeechRate(0.4);
       await _flutterTts.setVolume(1.0);
       await _flutterTts.setPitch(1.0);
       

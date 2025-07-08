@@ -73,7 +73,7 @@ class _SearchDestinationState extends State<SearchDestination> {
   Future<void> _speakGuide() async {
     await flutterTts.stop();
     await flutterTts.speak(
-        "Welcome to the search destination page. Swipe down to start voice input, or type your destination in the search box. Swipe left to go back, swipe right to go to the main navigation page."
+        "Welcome to the search destination page. Swipe up to start voice input, or type your destination in the search box. Swipe left to go back, swipe right to go to the main menu."
     );
   }
 
@@ -498,11 +498,11 @@ class _SearchDestinationState extends State<SearchDestination> {
               },
               onHorizontalDragEnd: (details) {
                 if (details.primaryVelocity != null) {
-                  if (details.primaryVelocity! > 0) {
-                    // Swipe left-to-right: go back
+                  if (details.primaryVelocity! < 0) {
+                    // Swipe left (right-to-left): go back
                     Navigator.pop(context);
-                  } else if (details.primaryVelocity! < 0) {
-                    // Swipe right-to-left: go to NavigationPage
+                  } else if (details.primaryVelocity! > 0) {
+                    // Swipe right (left-to-right): go to main menu
                     Navigator.pushAndRemoveUntil(
                       context,
                       MaterialPageRoute(builder: (context) => NavigationPage()),

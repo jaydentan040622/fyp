@@ -707,28 +707,34 @@ class _TransportScheduleState extends State<TransportSchedule> {
   Future<void> _speakAllTransportLines() async {
     await flutterTts.stop();
     await flutterTts.speak(
-        "You are on the public transport lines page. Swipe left to go back, swipe right to go to the main navigation page. Here are the available public transport lines."
+        "You are on the public transport lines page. Swipe left to go back, swipe right to go to the main menu. Here are the available public transport lines."
     );
     if (_lines.isEmpty) {
       await flutterTts.speak("No transport lines available.");
       return;
     }
 
-    String speechText = "Found ${_lines.length} transport lines. ";
+    String speechText = "Found \\${_lines.length} transport lines. ";
 
-    for (int i = 0; i < _lines.length && i < 11; i++) {
+    for (int i = 0; i < _lines.length && i < 5; i++) {
       final line = _lines[i];
       final lineName = line['long_name'] ?? 'Unknown Line';
       final frequency = _formatFrequencyForSpeech(line['frequency'] ?? 'Unknown frequency');
       final status = _lineStatus[line['route_id']] ?? '';
 
-      speechText += "Line ${i + 1}: ${lineName}. Frequency: ${frequency}. ";
+      speechText += "Line \\${i + 1}: \\${lineName}. Frequency: \\${frequency}. ";
 
       // Only mention status if it's available and not empty
       if (status.isNotEmpty && status != 'Unknown status') {
-        speechText += "Status: ${status}. ";
+        speechText += "Status: \\${status}. ";
       }
     }
+
+    if (_lines.length > 5) {
+      speechText += "There are \\${_lines.length - 5} more lines available. ";
+    }
+
+    speechText += "Tap on any line to hear detailed information.";
 
     await flutterTts.speak(speechText);
   }
@@ -801,12 +807,12 @@ class _TransportScheduleState extends State<TransportSchedule> {
             child: GestureDetector(
               onHorizontalDragEnd: (details) async {
                 if (details.primaryVelocity != null) {
-                  if (details.primaryVelocity! > 0) {
-                    // Swipe left-to-right: go back
+                  if (details.primaryVelocity! < 0) {
+                    // Swipe left (right-to-left): go back
                     await flutterTts.stop();
                     Navigator.pop(context);
-                  } else if (details.primaryVelocity! < 0) {
-                    // Swipe right-to-left: go to NavigationPage
+                  } else if (details.primaryVelocity! > 0) {
+                    // Swipe right (left-to-right): go to main menu
                     await flutterTts.stop();
                     Navigator.pushAndRemoveUntil(
                       context,
