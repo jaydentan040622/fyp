@@ -37,6 +37,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future.delayed(const Duration(milliseconds: 100));
       await _speakLoadingGuide();
+      if (!mounted) return;
       setState(() { _isLoading = true; });
       _loadGTFSData();
     });
@@ -49,18 +50,21 @@ class _TransportScheduleState extends State<TransportSchedule> {
     await flutterTts.setPitch(1.0);
 
     flutterTts.setStartHandler(() {
+      if (!mounted) return;
       setState(() {
         _isSpeaking = true;
       });
     });
 
     flutterTts.setCompletionHandler(() {
+      if (!mounted) return;
       setState(() {
         _isSpeaking = false;
       });
     });
 
     flutterTts.setErrorHandler((msg) {
+      if (!mounted) return;
       setState(() {
         _isSpeaking = false;
       });
@@ -309,6 +313,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
         }
         // Don't set default "Normal" status - only show status when there's actual information
       }
+      if (!mounted) return;
       setState(() {
         _transportLines = routes;
         _isLoading = false;
@@ -326,6 +331,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
       _getCurrentLocation();
     } catch (e) {
       print('Error in _loadGTFSData: $e');
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Error loading GTFS data: $e';
         _isLoading = false;
@@ -355,6 +361,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
             // Check if this is a "no alerts" response
             if (jsonData is Map && (jsonData.isEmpty || jsonData.containsKey('message'))) {
               print('No alerts detected in JSON response');
+              if (!mounted) return;
               setState(() {
                 int normalCount = 0;
                 for (final entry in _transportLines.entries) {
@@ -389,6 +396,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
           }
         } else {
           print('Empty response body, treating as no disruptions');
+          if (!mounted) return;
           setState(() {
             int normalCount = 0;
             for (final entry in _transportLines.entries) {
@@ -410,6 +418,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
       } else {
         print('HTTP error: ${response.statusCode}');
         // Even if API fails, treat as no disruptions (Normal status)
+        if (!mounted) return;
         setState(() {
           int normalCount = 0;
           for (final entry in _transportLines.entries) {
@@ -429,6 +438,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
       }
     } catch (e) {
       print('Network or parsing error: $e');
+      if (!mounted) return;
       setState(() {
         int unknownCount = 0;
         for (final entry in _transportLines.entries) {
@@ -496,6 +506,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
       }
     }
 
+    if (!mounted) return;
     setState(() {});
   }
 
@@ -505,6 +516,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
     // For now, we'll treat protobuf data as potential disruptions
     print('Protobuf data detected - treating as potential disruptions');
 
+    if (!mounted) return;
     setState(() {
       for (final entry in _transportLines.entries) {
         final name = entry.value['name'] ?? '';
@@ -582,6 +594,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
+        if (!mounted) return;
         setState(() {
           _errorMessage = 'Location services are disabled.';
           _isLoading = false;
@@ -593,6 +606,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
+          if (!mounted) return;
           setState(() {
             _errorMessage = 'Location permissions are denied.';
             _isLoading = false;
@@ -605,6 +619,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
         desiredAccuracy: LocationAccuracy.high,
       );
 
+      if (!mounted) return;
       setState(() {
         _currentPosition = position;
         _sortLinesByDistance();
@@ -616,6 +631,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
         _speakAllTransportLines();
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Error getting location: $e';
         _isLoading = false;
@@ -714,24 +730,20 @@ class _TransportScheduleState extends State<TransportSchedule> {
       return;
     }
 
-    String speechText = "Found \\${_lines.length} transport lines. ";
+    String speechText = "Found ${_lines.length} transport lines. ";
 
-    for (int i = 0; i < _lines.length && i < 5; i++) {
+    for (int i = 0; i < _lines.length && i < _lines.length; i++) {
       final line = _lines[i];
       final lineName = line['long_name'] ?? 'Unknown Line';
       final frequency = _formatFrequencyForSpeech(line['frequency'] ?? 'Unknown frequency');
       final status = _lineStatus[line['route_id']] ?? '';
 
-      speechText += "Line \\${i + 1}: \\${lineName}. Frequency: \\${frequency}. ";
+      speechText += "Line ${i + 1}: ${lineName}. Frequency: ${frequency}. ";
 
       // Only mention status if it's available and not empty
       if (status.isNotEmpty && status != 'Unknown status') {
-        speechText += "Status: \\${status}. ";
+        speechText += "Status: ${status}. ";
       }
-    }
-
-    if (_lines.length > 5) {
-      speechText += "There are \\${_lines.length - 5} more lines available. ";
     }
 
     speechText += "Tap on any line to hear detailed information.";
@@ -786,15 +798,16 @@ class _TransportScheduleState extends State<TransportSchedule> {
                           ),
                           onPressed: _isSpeaking ? null : _speakAllTransportLines,
                         ),
-                        // IconButton(
-                        //   icon: const Icon(Icons.refresh, color: Colors.white),
-                        //   onPressed: () {
-                        //     setState(() {
-                        //       _isLoading = true;
-                        //     });
-                        //     _loadGTFSData();
-                        //   },
-                        // ),
+                        IconButton(
+                          icon: const Icon(Icons.refresh, color: Colors.white),
+                          onPressed: () {
+                            if (!mounted) return;
+                            setState(() {
+                              _isLoading = true;
+                            });
+                            _loadGTFSData();
+                          },
+                        ),
                       ],
                     ),
                   ],
