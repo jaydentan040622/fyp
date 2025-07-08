@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:fyp/home.dart';
 import 'package:fyp/navigationModule/transportRoute.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'dart:math';
-
-import 'navigation_page.dart';
 
 class SearchDestination extends StatefulWidget {
   const SearchDestination({super.key});
@@ -505,7 +503,7 @@ class _SearchDestinationState extends State<SearchDestination> {
                     // Swipe right (left-to-right): go to main menu
                     Navigator.pushAndRemoveUntil(
                       context,
-                      MaterialPageRoute(builder: (context) => NavigationPage()),
+                      MaterialPageRoute(builder: (context) => HomeScreen()),
                           (route) => false,
                     );
                   }

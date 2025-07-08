@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:fyp/accountModule/app.dart';
-
-import 'navigation_page.dart';
+import 'package:fyp/home.dart';
 import 'searchDestination.dart';
 import 'transportSchedule.dart';
 
@@ -152,7 +151,7 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
                           await flutterTts.stop();
                           Navigator.pushAndRemoveUntil(
                             context,
-                            MaterialPageRoute(builder: (context) => NavigationPage()),
+                            MaterialPageRoute(builder: (context) => HomeScreen()),
                                 (route) => false,
                           );
                         }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fyp/home.dart';
 import 'package:record/record.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,7 +10,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-
 import 'saved_audio.dart';
 
 class VoiceNotePage extends StatefulWidget {
@@ -80,13 +80,21 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
   @override
   void initState() {
     super.initState();
+    _initializeTts();
     WidgetsBinding.instance.addPostFrameCallback((_) => _speakGuide());
+  }
+
+  Future<void> _initializeTts() async {
+    await flutterTts.setLanguage("en-US");
+    await flutterTts.setSpeechRate(0.4);
+    await flutterTts.setVolume(1.0);
+    await flutterTts.setPitch(1.0);
   }
 
   Future<void> _speakGuide() async {
     await flutterTts.stop();
     await flutterTts.speak(
-        "Welcome to the voice note page. Swipe up to start recording. While recording, swipe up again to stop. Swipe down to go to the saved audio page."
+        "Welcome to the voice note page. Swipe up to start recording. While recording, swipe up again to stop. Swipe down to go to the saved audio page. Swipe left to go back. Swipe right to go to the main menu."
     );
   }
 
@@ -235,6 +243,21 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
                 );
               }
               // If recording, do nothing
+            }
+          }
+        },
+        onHorizontalDragEnd: (details) async {
+          if (details.primaryVelocity != null) {
+            if (details.primaryVelocity! < 0) {
+              // Swipe left (right-to-left): go back
+              Navigator.pop(context);
+            } else if (details.primaryVelocity! > 0) {
+              // Swipe right (left-to-right): go to main menu
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => HomeScreen()),
+                    (route) => false,
+              );
             }
           }
         },
