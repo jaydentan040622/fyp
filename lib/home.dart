@@ -1,4 +1,5 @@
 import 'dart:core';
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -36,7 +37,7 @@ class HomeGestureService {
   bool _isInitialized = false;
   bool _isRecording = false;
   Function(HomeGestureType)? _onGestureDetected;
-  
+
   // Gesture detection parameters
   static const double _minSwipeDistance = 100.0;
   static const double _maxSwipeVerticalDeviation = 50.0;
@@ -86,17 +87,17 @@ class HomeGestureService {
   void endGesture() {
     if (!_isRecording) return;
     _isRecording = false;
-    
+
     if (_gesturePoints.length < 2) return;
 
     HomeGestureType detectedGesture = _analyzeGesture();
-    
+
     if (detectedGesture != HomeGestureType.unknown) {
       _triggerHapticFeedback(detectedGesture);
       _announceGesture(detectedGesture);
       _onGestureDetected?.call(detectedGesture);
     }
-    
+
     _gesturePoints.clear();
   }
 
@@ -112,20 +113,20 @@ class HomeGestureService {
     double verticalDistance = (endY - startY).abs();
 
     // Check for horizontal swipe (left/right)
-    if (horizontalDistance >= _minSwipeDistance && 
+    if (horizontalDistance >= _minSwipeDistance &&
         verticalDistance <= _maxSwipeVerticalDeviation) {
       return endX > startX ? HomeGestureType.swipeRight : HomeGestureType.swipeLeft;
     }
 
     // Check for upward swipe
-    if (verticalDistance >= _minUpwardSwipeDistance && 
+    if (verticalDistance >= _minUpwardSwipeDistance &&
         horizontalDistance <= _maxUpwardSwipeHorizontalDeviation) {
       if (endY < startY) return HomeGestureType.swipeUp;
     }
 
     // Check for downward line
     double verticalMovement = endY - startY;
-    if (verticalMovement >= _minDownwardLineDistance && 
+    if (verticalMovement >= _minDownwardLineDistance &&
         horizontalDistance <= _maxDownwardLineHorizontalDeviation) {
       return HomeGestureType.downwardLine;
     }
@@ -196,20 +197,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
   bool _gestureEnabled = true;
   bool _isInitialized = false;
   bool _isActive = false;
-  
+
   final List<String> _pageNames = [
     'Image Processing',
     'Crowdsourcing',
     'Navigation'
   ];
-  
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initializeSystem();
   }
-  
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -230,35 +231,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
   void _initializeSystem() {
     debugPrint('HomeScreen: Initializing system...');
     _isActive = true;
-    
+
     // Cancel any existing initialization
     _initializationTimer?.cancel();
-    
+
     _initializationTimer = Timer(const Duration(milliseconds: 500), () async {
       if (!mounted || !_isActive) return;
-      
+
       try {
         // Initialize gesture service
         await _gestureService.initialize();
-        
+
         if (!mounted || !_isActive) return;
-        
+
         // Set up gesture callback
         _gestureService.setGestureCallback((HomeGestureType gesture) {
           if (mounted && _isActive) {
             _handleGesture(gesture);
           }
         });
-        
+
         if (!mounted || !_isActive) return;
-        
+
         setState(() {
           _isInitialized = true;
         });
-        
+
         // Start announcements
         _startPageAnnouncements();
-        
+
         // Welcome message
         Future.delayed(const Duration(seconds: 1), () {
           if (mounted && _isActive) {
@@ -266,14 +267,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
             Future.delayed(const Duration(seconds: 2), () {
               if (mounted && _isActive) {
                 _gestureService.speak(
-                  'Gesture navigation enabled. Swipe left or right to navigate pages, '
-                  'draw a line down to open profile, or swipe up to confirm selection.'
+                    'Gesture navigation enabled. Swipe left or right to navigate pages, '
+                        'draw a line down to open profile, or swipe up to confirm selection.'
                 );
               }
             });
           }
         });
-        
+
         debugPrint('HomeScreen: System initialized successfully');
       } catch (e) {
         debugPrint('HomeScreen: Error initializing system: $e');
@@ -290,12 +291,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
   void _checkAndReinitialize() {
     debugPrint('HomeScreen: Checking and reinitializing...');
     if (!mounted) return;
-    
+
     // Check if we're the current route
     if (ModalRoute.of(context)?.isCurrent == true) {
       _isActive = true;
-      if (!_isInitialized || 
-          _pageAnnouncementTimer == null || 
+      if (!_isInitialized ||
+          _pageAnnouncementTimer == null ||
           !_pageAnnouncementTimer!.isActive) {
         debugPrint('HomeScreen: Reinitializing due to inactive state');
         _initializeSystem();
@@ -305,7 +306,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
 
   void _startPageAnnouncements() {
     if (!mounted || !_isActive) return;
-    
+
     _pageAnnouncementTimer?.cancel();
     _pageAnnouncementTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (mounted && _isInitialized && _isActive) {
@@ -323,9 +324,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
 
   void _handleGesture(HomeGestureType gesture) {
     if (!_gestureEnabled || !_isInitialized || !_isActive) return;
-    
+
     debugPrint('HomeScreen: Handling gesture: $gesture');
-    
+
     switch (gesture) {
       case HomeGestureType.swipeLeft:
         _previousPage();
@@ -385,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
   void _confirmPageSelection() {
     _gestureService.speak('Confirming selection for ${_pageNames[_currentPage]}');
     _pausePageAnnouncements();
-    
+
     Widget targetPage;
     switch (_currentPage) {
       case 0:
@@ -400,7 +401,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
       default:
         return;
     }
-    
+
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => targetPage),
@@ -421,7 +422,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
         }
       }
     });
-    
+
     return Scaffold(
       body: SafeArea(
         child: GestureDetector(
@@ -441,13 +442,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
             }
           },
           child: Column(
-          children: [
+            children: [
               // Header with welcome message and gesture toggle
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              child: Row(
-                children: [
-                  const Expanded(child: UserWidget()),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                child: Row(
+                  children: [
+                    const Expanded(child: UserWidget()),
                     // Gesture toggle button
                     IconButton(
                       icon: Icon(
@@ -458,111 +459,111 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
                         setState(() {
                           _gestureEnabled = !_gestureEnabled;
                         });
-                                                 _gestureService.speak(
-                           _gestureEnabled ? 'Gesture navigation enabled' : 'Gesture navigation disabled'
-                         );
+                        _gestureService.speak(
+                            _gestureEnabled ? 'Gesture navigation enabled' : 'Gesture navigation disabled'
+                        );
                       },
                       tooltip: 'Toggle gesture navigation',
                     ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            
-            // Main content with PageView
-            Expanded(
-              child: PageView(
-                controller: _pageController,
-                onPageChanged: (index) {
-                  setState(() {
-                    _currentPage = index;
-                  });
-                    
+
+              // Main content with PageView
+              Expanded(
+                child: PageView(
+                  controller: _pageController,
+                  onPageChanged: (index) {
+                    setState(() {
+                      _currentPage = index;
+                    });
+
                     // Announce new page
                     if (_isInitialized) {
                       Future.delayed(const Duration(milliseconds: 300), () {
                         _gestureService.speak('Current page: ${_pageNames[_currentPage]}');
                       });
                     }
-                },
-                children: const [
-                  // Image Processing Module
-                  ImageProcessingModule(),
-                  
-                  // Crowdsourcing Module
-                  CrowdsourcingModule(),
-                  
-                  // Navigation Module
-                  NavigationModule(),
-                ],
+                  },
+                  children: const [
+                    // Image Processing Module
+                    ImageProcessingModule(),
+
+                    // Crowdsourcing Module
+                    CrowdsourcingModule(),
+
+                    // Navigation Module
+                    NavigationModule(),
+                  ],
+                ),
               ),
-            ),
-            
-            // Page indicator and navigation arrows
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Previous arrow
-                  IconButton(
-                    icon: Icon(
-                      Icons.arrow_back_ios_rounded,
-                      color: _currentPage > 0 ? const Color(0xFF2561FA) : Colors.grey.shade400,
+
+              // Page indicator and navigation arrows
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Previous arrow
+                    IconButton(
+                      icon: Icon(
+                        Icons.arrow_back_ios_rounded,
+                        color: _currentPage > 0 ? const Color(0xFF2561FA) : Colors.grey.shade400,
+                      ),
+                      onPressed: _currentPage > 0 ? _previousPage : null,
                     ),
-                    onPressed: _currentPage > 0 ? _previousPage : null,
-                  ),
-                  
-                  // Page indicators
-                  ...List.generate(
-                    _totalPages,
-                    (index) => Container(
-                      width: 10,
-                      height: 10,
-                      margin: const EdgeInsets.symmetric(horizontal: 8),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _currentPage == index
-                            ? const Color(0xFF2561FA)
-                            : Colors.grey.shade300,
+
+                    // Page indicators
+                    ...List.generate(
+                      _totalPages,
+                          (index) => Container(
+                        width: 10,
+                        height: 10,
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _currentPage == index
+                              ? const Color(0xFF2561FA)
+                              : Colors.grey.shade300,
+                        ),
                       ),
                     ),
-                  ),
-                  
-                  // Next arrow
-                  IconButton(
-                    icon: Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      color: _currentPage < _totalPages - 1 ? const Color(0xFF2561FA) : Colors.grey.shade400,
+
+                    // Next arrow
+                    IconButton(
+                      icon: Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        color: _currentPage < _totalPages - 1 ? const Color(0xFF2561FA) : Colors.grey.shade400,
+                      ),
+                      onPressed: _currentPage < _totalPages - 1 ? _nextPage : null,
                     ),
-                    onPressed: _currentPage < _totalPages - 1 ? _nextPage : null,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            
-            // Bottom user profile button
-            Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: ElevatedButton.icon(
+
+              // Bottom user profile button
+              Padding(
+                padding: const EdgeInsets.only(bottom: 20),
+                child: ElevatedButton.icon(
                   onPressed: _openProfile,
-                icon: const Icon(Icons.person, color: Colors.white),
-                label: const Text(
-                  'User Profile',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+                  icon: const Icon(Icons.person, color: Colors.white),
+                  label: const Text(
+                    'User Profile',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2561FA),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2561FA),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
                   ),
                 ),
               ),
-            ),
-              
+
               // Gesture instruction panel (appears when gesture is enabled)
               if (_gestureEnabled && _isInitialized)
                 Container(
@@ -583,9 +584,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
                     textAlign: TextAlign.center,
                   ),
                 ),
-              
+
               const SizedBox(height: 10),
-          ],
+            ],
           ),
         ),
       ),
@@ -610,16 +611,16 @@ class _UserWidgetState extends State<UserWidget> {
     super.initState();
     _loadUserData();
   }
-  
+
   Future<void> _loadUserData() async {
     setState(() {
       _isLoading = true;
     });
-    
+
     var user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       _user = user;
-      
+
       try {
         // Fetch username from 'userprofile' collection
         final doc = await FirebaseFirestore.instance.collection('userprofile').doc(user.uid).get();
@@ -651,13 +652,13 @@ class _UserWidgetState extends State<UserWidget> {
     return _isLoading
         ? const Center(child: CircularProgressIndicator(color: Color(0xFF2561FA)))
         : Text(
-            _username.isNotEmpty ? 'Welcome, $_username!' : 'Welcome!',
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2C3E50),
-            ),
-          );
+      _username.isNotEmpty ? 'Welcome, $_username!' : 'Welcome!',
+      style: const TextStyle(
+        fontSize: 24,
+        fontWeight: FontWeight.bold,
+        color: Color(0xFF2C3E50),
+      ),
+    );
   }
 }
 
@@ -687,7 +688,7 @@ class ImageProcessingModule extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          
+
           // Title
           const Text(
             'Image Processing',
@@ -698,7 +699,7 @@ class ImageProcessingModule extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          
+
           // Description
           const Text(
             'Analyze and process images with advanced AI tools',
@@ -710,7 +711,7 @@ class ImageProcessingModule extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 40),
-          
+
           // Action button
           ElevatedButton(
             onPressed: () {
@@ -769,7 +770,7 @@ class CrowdsourcingModule extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          
+
           // Title
           const Text(
             'Crowdsourcing',
@@ -780,7 +781,7 @@ class CrowdsourcingModule extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          
+
           // Description
           const Text(
             'Collaborate with others to gather and share information',
@@ -792,7 +793,7 @@ class CrowdsourcingModule extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 40),
-          
+
           // Action button
           ElevatedButton(
             onPressed: () {
@@ -851,7 +852,7 @@ class NavigationModule extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          
+
           // Title
           const Text(
             'Navigation',
@@ -862,7 +863,7 @@ class NavigationModule extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          
+
           // Description
           const Text(
             'Get directions and navigate to your destination',
@@ -874,7 +875,7 @@ class NavigationModule extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 40),
-          
+
           // Action button
           ElevatedButton(
             onPressed: () {
