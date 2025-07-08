@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 import 'saved_audio.dart';
 
@@ -20,6 +21,7 @@ class VoiceNotePage extends StatefulWidget {
 
 class _VoiceNotePageState extends State<VoiceNotePage> {
   final AudioRecorder _audioRecorder = AudioRecorder();
+  final FlutterTts flutterTts = FlutterTts();
   bool _isRecording = false;
   String? _recordedFilePath;
   bool _isUploading = false;
@@ -78,6 +80,14 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _speakGuide());
+  }
+
+  Future<void> _speakGuide() async {
+    await flutterTts.stop();
+    await flutterTts.speak(
+        "Welcome to the voice note page. Swipe up to start recording. While recording, swipe up again to stop. Swipe down to go to the saved audio page."
+    );
   }
 
   Future<void> _startRecording() async {
@@ -204,31 +214,56 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
           ),
         ],
       ),
-      body: Center(
-        child: _isUploading
-            ? const CircularProgressIndicator()
-            : Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              _isRecording ? Icons.mic : Icons.mic_none,
-              size: 100,
-              color: _isRecording ? Colors.red : Colors.blue,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _isRecording ? _stopRecording : _startRecording,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _isRecording ? Colors.red : const Color(0xFF2561FA),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragEnd: (details) async {
+          if (details.primaryVelocity != null) {
+            if (details.primaryVelocity! < 0) {
+              // Swipe up
+              if (!_isRecording && !_isUploading) {
+                await _startRecording();
+              } else if (_isRecording && !_isUploading) {
+                await _stopRecording();
+              }
+              // If not recording and uploading, do nothing
+            } else if (details.primaryVelocity! > 0) {
+              // Swipe down
+              if (!_isRecording) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SavedAudioPage()),
+                );
+              }
+              // If recording, do nothing
+            }
+          }
+        },
+        child: Center(
+          child: _isUploading
+              ? const CircularProgressIndicator()
+              : Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                _isRecording ? Icons.mic : Icons.mic_none,
+                size: 100,
+                color: _isRecording ? Colors.red : Colors.blue,
               ),
-              child: Text(_isRecording ? 'Stop Recording' : 'Start Recording'),
-            ),
-          ],
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: _isRecording ? _stopRecording : _startRecording,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _isRecording ? Colors.red : const Color(0xFF2561FA),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: Text(_isRecording ? 'Stop Recording' : 'Start Recording'),
+              ),
+            ],
+          ),
         ),
       ),
     );

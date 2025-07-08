@@ -45,7 +45,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
 
   Future<void> _initializeTts() async {
     await flutterTts.setLanguage("en-US");
-    await flutterTts.setSpeechRate(0.3); // Slower speech rate
+    await flutterTts.setSpeechRate(0.4); // Slower speech rate
     await flutterTts.setVolume(1.0);
     await flutterTts.setPitch(1.0);
 

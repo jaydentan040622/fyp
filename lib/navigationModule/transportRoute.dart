@@ -291,7 +291,7 @@ class _TransportRoutesState extends State<TransportRoutes> {
 
     String speechText = "You are on the transport route page. Swipe left to go back, swipe right to go to the main menu. ";
     speechText += "I found ";
-    speechText += "${routes.length} route options to your destination. ";
+    speechText += "${routes.length} route options to ${widget.destinationName}. ";
 
     for (int i = 0; i < routes.length && i < 3; i++) {
       final route = routes[i];
