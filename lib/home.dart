@@ -441,7 +441,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
               _gestureService.endGesture();
             }
           },
-          child: Column(
+        child: Column(
           children: [
               // Header with welcome message and gesture toggle
             Padding(

@@ -11,7 +11,7 @@ class ImageProcessingPage extends StatefulWidget {
   State<ImageProcessingPage> createState() => _ImageProcessingPageState();
 }
 
-class _ImageProcessingPageState extends State<ImageProcessingPage> {
+class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsBindingObserver {
   final GestureRecognitionService _gestureService = GestureRecognitionService();
   Timer? _pageAnnouncementTimer;
   bool _gestureEnabled = true;
@@ -25,12 +25,24 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeGestureService();
     _startPageAnnouncements();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed && mounted && _isInitialized) {
+      // When app resumes, restart announcements
+      debugPrint('App resumed - restarting Image Processing announcements');
+      _resumeAnnouncements();
+    }
   }
   
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pageAnnouncementTimer?.cancel();
     _gestureService.clearActiveAnnouncementSource('image_processing_page');
     _gestureService.dispose();
@@ -113,7 +125,11 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> {
         builder: (context) => const LiveDetectionPage(),
       ),
     ).then((_) {
-      _resumeAnnouncements();
+      // Always resume announcements when returning
+      if (mounted) {
+        debugPrint('Returned from Live Detection - resuming announcements');
+        _resumeAnnouncements();
+      }
     });
   }
 
@@ -126,7 +142,11 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> {
         builder: (context) => const OCRPage(),
       ),
     ).then((_) {
-      _resumeAnnouncements();
+      // Always resume announcements when returning
+      if (mounted) {
+        debugPrint('Returned from OCR - resuming announcements');
+        _resumeAnnouncements();
+      }
     });
   }
 
@@ -146,7 +166,22 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> {
 
   void _resumeAnnouncements() {
     if (mounted && _isInitialized) {
-      _startPageAnnouncements();
+      // Clear any conflicting announcement sources first
+      _gestureService.stopAllAnnouncements();
+      
+      // Wait a moment then restart announcements
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && _isInitialized) {
+          _startPageAnnouncements();
+          
+          // Give immediate feedback that we're back
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (mounted) {
+              _gestureService.speak('Returned to Image Processing page.');
+            }
+          });
+        }
+      });
     }
   }
 
