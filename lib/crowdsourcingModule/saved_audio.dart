@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
+import 'package:flutter_tts/flutter_tts.dart';
+import '../../navigationModule/navigation_page.dart';
 
 // Global audio player manager to ensure only one recording plays at a time
 class AudioPlayerManager {
@@ -71,8 +73,55 @@ class AudioPlayerManager {
   }
 }
 
-class SavedAudioPage extends StatelessWidget {
+class SavedAudioPage extends StatefulWidget {
   const SavedAudioPage({super.key});
+
+  @override
+  State<SavedAudioPage> createState() => _SavedAudioPageState();
+}
+
+class _SavedAudioPageState extends State<SavedAudioPage> {
+  final FlutterTts flutterTts = FlutterTts();
+  List<String> _fileNames = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeTts();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _speakGuide());
+  }
+
+  Future<void> _initializeTts() async {
+    await flutterTts.setLanguage("en-US");
+    await flutterTts.setSpeechRate(0.4);
+    await flutterTts.setVolume(1.0);
+    await flutterTts.setPitch(1.0);
+  }
+
+  Future<void> _speakGuide() async {
+    await flutterTts.stop();
+    String guide = "Welcome to the saved audio page. ";
+    if (_fileNames.isNotEmpty) {
+      guide += "You have the following saved audio files: ";
+      for (final name in _fileNames) {
+        guide += "$name. ";
+      }
+    } else {
+      guide += "You have no saved audio files. ";
+    }
+    guide += "Swipe left to go back. Swipe right to go to the main menu. Swipe up to play an audio file by voice command. Swipe down to read a transcript by voice command.";
+    await flutterTts.speak(guide);
+  }
+
+  Future<void> _handleVoicePlay() async {
+    await flutterTts.speak("Say the name of the audio file you want to play.");
+    // Integrate your voice command logic here
+  }
+
+  Future<void> _handleVoiceTranscript() async {
+    await flutterTts.speak("Say the name of the audio file to read its transcript.");
+    // Integrate your voice command logic here
+  }
 
   Future<void> _renameFile(BuildContext context, String docId, String currentName) async {
     final controller = TextEditingController(text: currentName);
@@ -176,61 +225,96 @@ class SavedAudioPage extends StatelessWidget {
             return const Center(child: Text('No saved audio found.'));
           }
           final docs = snapshot.data!.docs;
-          return ListView.builder(
-            itemCount: docs.length,
-            itemBuilder: (context, index) {
-              final doc = docs[index];
-              final data = doc.data() as Map<String, dynamic>;
-              final fileName = data['file_name'] ?? data['file_path'] ?? 'Unknown';
-              final transcript = data['transcript'] ?? '';
-              final createdAt = (data['created_at'] as Timestamp?)?.toDate();
-              return ExpansionTile(
-                leading: const Icon(Icons.audiotrack, color: Color(0xFF2561FA)),
-                title: Text(fileName),
-                subtitle: createdAt != null
-                    ? Text('Created: ${createdAt.toLocal()}')
-                    : null,
-                trailing: PopupMenuButton<String>(
-                  onSelected: (value) async {
-                    if (value == 'rename') {
-                      await _renameFile(context, doc.id, fileName);
-                    } else if (value == 'delete') {
-                      await _deleteFile(context, doc.id, fileName);
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: 'rename',
-                      child: Text('Rename'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Text('Delete'),
-                    ),
-                  ],
-                ),
-                children: [
-                  if (transcript.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                      child: Text(
-                        transcript,
-                        style: const TextStyle(fontSize: 16, color: Colors.black87),
-                      ),
-                    ),
-                  if (transcript.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                      child: Text('No transcript available.'),
-                    ),
-                  if (data['audio_url'] != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                      child: AudioPlayerWidget(audioUrl: data['audio_url']),
-                    ),
-                ],
-              );
+          _fileNames = docs.map<String>((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return data['file_name']?.toString() ?? data['file_path']?.toString() ?? 'Unknown';
+          }).toList();
+          // Re-speak guide with updated file names
+          WidgetsBinding.instance.addPostFrameCallback((_) => _speakGuide());
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragEnd: (details) async {
+              if (details.primaryVelocity != null) {
+                if (details.primaryVelocity! < 0) {
+                  // Swipe left (right-to-left): go back
+                  Navigator.pop(context);
+                } else if (details.primaryVelocity! > 0) {
+                  // Swipe right (left-to-right): go to main menu
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (context) => NavigationPage()),
+                        (route) => false,
+                  );
+                }
+              }
             },
+            onVerticalDragEnd: (details) async {
+              if (details.primaryVelocity != null) {
+                if (details.primaryVelocity! < 0) {
+                  // Swipe up: play audio by voice command
+                  await _handleVoicePlay();
+                } else if (details.primaryVelocity! > 0) {
+                  // Swipe down: read transcript by voice command
+                  await _handleVoiceTranscript();
+                }
+              }
+            },
+            child: ListView.builder(
+              itemCount: docs.length,
+              itemBuilder: (context, index) {
+                final doc = docs[index];
+                final data = doc.data() as Map<String, dynamic>;
+                final fileName = data['file_name'] ?? data['file_path'] ?? 'Unknown';
+                final transcript = data['transcript'] ?? '';
+                final createdAt = (data['created_at'] as Timestamp?)?.toDate();
+                return ExpansionTile(
+                  leading: const Icon(Icons.audiotrack, color: Color(0xFF2561FA)),
+                  title: Text(fileName),
+                  subtitle: createdAt != null
+                      ? Text('Created: ${createdAt.toLocal()}')
+                      : null,
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (value) async {
+                      if (value == 'rename') {
+                        await _renameFile(context, doc.id, fileName);
+                      } else if (value == 'delete') {
+                        await _deleteFile(context, doc.id, fileName);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'rename',
+                        child: Text('Rename'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete'),
+                      ),
+                    ],
+                  ),
+                  children: [
+                    if (transcript.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                        child: Text(
+                          transcript,
+                          style: const TextStyle(fontSize: 16, color: Colors.black87),
+                        ),
+                      ),
+                    if (transcript.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                        child: Text('No transcript available.'),
+                      ),
+                    if (data['audio_url'] != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                        child: AudioPlayerWidget(audioUrl: data['audio_url']),
+                      ),
+                  ],
+                );
+              },
+            ),
           );
         },
       ),
