@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:csv/csv.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'dart:typed_data';
 import 'package:flutter_tts/flutter_tts.dart';
-
-import 'navigation_page.dart';
+import '../home.dart';
 
 class TransportSchedule extends StatefulWidget {
   const TransportSchedule({Key? key}) : super(key: key);
@@ -829,7 +827,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
                     await flutterTts.stop();
                     Navigator.pushAndRemoveUntil(
                       context,
-                      MaterialPageRoute(builder: (context) => NavigationPage()),
+                      MaterialPageRoute(builder: (context) => HomeScreen()),
                           (route) => false,
                     );
                   }

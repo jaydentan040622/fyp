@@ -1,13 +1,11 @@
 import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_tts/flutter_tts.dart';
-
-import 'navigation_page.dart';
+import '../home.dart';
 
 class TransportRoutes extends StatefulWidget {
   final LatLng destination;
@@ -490,7 +488,7 @@ class _TransportRoutesState extends State<TransportRoutes> {
                     await flutterTts.stop();
                     Navigator.pushAndRemoveUntil(
                       context,
-                      MaterialPageRoute(builder: (context) => NavigationPage()),
+                      MaterialPageRoute(builder: (context) => HomeScreen()),
                           (route) => false,
                     );
                   }
