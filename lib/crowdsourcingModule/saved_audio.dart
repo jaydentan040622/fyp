@@ -91,6 +91,7 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
   bool _isListening = false;
   String _debugMessage = '';
   bool _hasSpokenWelcome = false;
+  Map<String, dynamic>? _lastPlayedAudioData; // Track last played audio
 
   @override
   void initState() {
@@ -189,7 +190,7 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
     });
 
     await flutterTts.speak("Say the name of the audio file you want to play and read transcript.");
-    await Future.delayed(const Duration(seconds: 2));
+    await Future.delayed(const Duration(seconds: 5));
     if (!mounted) return;
     await _startListening('combined');
   }
@@ -282,6 +283,18 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
       return;
     }
 
+    // Handle replay command
+    if (command.trim().toLowerCase() == 'replay') {
+      if (_lastPlayedAudioData != null) {
+        await speakAndWait("Replaying last audio and transcript.");
+        await Future.delayed(const Duration(seconds: 1));
+        await _playAudioAndReadTranscript(_lastPlayedAudioData!, skipIntro: false);
+      } else {
+        await speakAndWait("No audio has been played yet to replay.");
+      }
+      return;
+    }
+
     // Find the best matching file name
     String? bestMatch = _findBestMatch(command.toLowerCase());
     print('Best match found: $bestMatch');
@@ -312,13 +325,19 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
       return;
     }
 
+    // Save as last played
+    _lastPlayedAudioData = audioData;
+
     print('Found audio data, processing action: $action');
     setState(() {
       _debugMessage = 'Found file: $bestMatch, processing...';
     });
 
     if (action == 'combined') {
-      await _playAudioAndReadTranscript(audioData);
+      await speakAndWait("File found.");
+      await speakAndWait("Playing audio and reading transcript for: ${audioData['file_name'] ?? audioData['file_path']}");
+      await Future.delayed(const Duration(seconds: 2));
+      await _playAudioAndReadTranscript(audioData, skipIntro: true);
     } else if (action == 'play') {
       await _playAudioFile(audioData);
     } else if (action == 'transcript') {
@@ -409,45 +428,44 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
     }
   }
 
-  Future<void> _playAudioAndReadTranscript(Map<String, dynamic> audioData) async {
+  Future<void> _playAudioAndReadTranscript(Map<String, dynamic> audioData, {bool skipIntro = false}) async {
     if (!mounted) return;
-    await flutterTts.speak("Playing audio and reading transcript for: ${audioData['file_name'] ?? audioData['file_path']}");
-
+    _lastPlayedAudioData = audioData;
+    if (!skipIntro) {
+      await speakAndWait("Playing audio and reading transcript for: "+
+          "${audioData['file_name'] ?? audioData['file_path']}");
+    }
     // Play the audio first
     if (audioData['audio_url'] != null) {
       try {
         final player = AudioPlayer();
         await player.setUrl(audioData['audio_url']);
         await player.play();
+        // Wait for audio to finish
+        await player.playerStateStream
+            .firstWhere((state) => state.processingState == ProcessingState.completed);
+        await player.dispose();
 
-        // Wait for audio to finish, then read transcript
-        player.playerStateStream.listen((state) async {
-          if (state.processingState == ProcessingState.completed) {
-            player.dispose();
-
-            // Read transcript after audio finishes
-            if (!mounted) return;
-            String transcript = audioData['transcript'] ?? '';
-
-            if (transcript.isEmpty) {
-              if (!mounted) return;
-              await flutterTts.speak("Audio finished. No transcript available for this file.");
-            } else {
-              if (!mounted) return;
-              await flutterTts.speak("Audio finished. Now reading transcript.");
-              await Future.delayed(const Duration(seconds: 1));
-              if (!mounted) return;
-              await flutterTts.speak(transcript);
-            }
-          }
-        });
+        // Read transcript after audio finishes
+        if (!mounted) return;
+        String transcript = audioData['transcript'] ?? '';
+        if (transcript.isEmpty) {
+          if (!mounted) return;
+          await speakAndWait("Audio finished. No transcript available for this file.");
+        } else {
+          if (!mounted) return;
+          await speakAndWait("Audio finished. Now reading transcript.");
+          await Future.delayed(const Duration(seconds: 1));
+          if (!mounted) return;
+          await flutterTts.speak(transcript);
+        }
       } catch (e) {
         if (!mounted) return;
-        await flutterTts.speak("Error playing audio file.");
+        await speakAndWait("Error playing audio file.");
       }
     } else {
       if (!mounted) return;
-      await flutterTts.speak("No audio URL available for this file.");
+      await speakAndWait("No audio URL available for this file.");
     }
   }
 
@@ -534,6 +552,16 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Delete failed.')));
       }
     }
+  }
+
+  // Place speakAndWait as a method of _SavedAudioPageState
+  Future<void> speakAndWait(String text) async {
+    final completer = Completer<void>();
+    flutterTts.setCompletionHandler(() {
+      if (!completer.isCompleted) completer.complete();
+    });
+    await flutterTts.speak(text);
+    await completer.future;
   }
 
   @override
@@ -724,71 +752,11 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
               );
             },
           ),
-          // Status indicator overlay (always visible)
-          Positioned(
-            top: 20,
-            left: 0,
-            right: 0,
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20),
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.9),
-                borderRadius: BorderRadius.circular(25),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Text(
-                'Status: ${_isListening ? "LISTENING" : "Ready for gestures"} | Debug: $_debugMessage',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-          // Debug message overlay
-          if (_debugMessage.isNotEmpty)
-            Positioned(
-              top: 80,
-              left: 0,
-              right: 0,
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 20),
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(25),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  _debugMessage,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          // Listening indicator overlay
+          // Remove the status bar and debug overlay
+          // Only show the listening indicator at the bottom when listening
           if (_isListening)
             Positioned(
-              top: 20,
+              bottom: 20,
               left: 0,
               right: 0,
               child: Container(
