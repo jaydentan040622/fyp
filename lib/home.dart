@@ -718,7 +718,7 @@ class ImageProcessingModule extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const CrowdsourcingPage(),
+                  builder: (context) => const ImageProcessingPage(),
                 ),
               );
             },
