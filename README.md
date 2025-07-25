@@ -1,6 +1,6 @@
-# Flutter Accessibility App
+# fyp
 
-A Flutter app designed with accessibility features for blind and visually impaired users.
+A new Flutter project.
 
 ## Features
 

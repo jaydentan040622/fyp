@@ -16,12 +16,12 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
   Timer? _pageAnnouncementTimer;
   bool _gestureEnabled = true;
   bool _isInitialized = false;
-  
+
   final List<String> _features = [
     'Live Detection - Swipe up to access',
     'OCR Text Recognition - Swipe down to access'
   ];
-  
+
   @override
   void initState() {
     super.initState();
@@ -39,7 +39,7 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
       _resumeAnnouncements();
     }
   }
-  
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -52,25 +52,25 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
   Future<void> _initializeGestureService() async {
     try {
       await _gestureService.initialize();
-      
+
       // Set gesture callback
       _gestureService.setGestureCallback((GestureType gesture) {
         _handleGesture(gesture);
       });
-      
+
       setState(() {
         _isInitialized = true;
       });
-      
+
       // Welcome message
       Future.delayed(const Duration(seconds: 1), () {
         if (mounted) {
           _gestureService.speak(
-            'Image Processing page loaded. Swipe up for Live Detection, swipe down for OCR, or swipe left to go back to main page.'
+              'Image Processing page loaded. Swipe up for Live Detection, swipe down for OCR, or swipe left to go back to main page.'
           );
         }
       });
-      
+
     } catch (e) {
       debugPrint('Error initializing gesture service: $e');
     }
@@ -78,14 +78,14 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
 
   void _startPageAnnouncements() {
     _pageAnnouncementTimer?.cancel();
-    
+
     // Register this page as the active announcement source
     if (!_gestureService.setActiveAnnouncementSource('image_processing_page')) {
       // Another page is already making announcements, stop all first
       _gestureService.stopAllAnnouncements();
       _gestureService.setActiveAnnouncementSource('image_processing_page');
     }
-    
+
     _pageAnnouncementTimer = Timer.periodic(const Duration(seconds: 8), (timer) {
       if (mounted && _isInitialized && _gestureService.canMakeAnnouncements('image_processing_page')) {
         _announcePageContent();
@@ -100,7 +100,7 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
 
   void _handleGesture(GestureType gesture) {
     if (!_gestureEnabled) return;
-    
+
     switch (gesture) {
       case GestureType.swipeUp:
         _navigateToLiveDetection();
@@ -242,7 +242,7 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
                             _gestureEnabled = !_gestureEnabled;
                           });
                           _gestureService.speak(
-                            _gestureEnabled ? 'Gesture navigation enabled' : 'Gesture navigation disabled'
+                              _gestureEnabled ? 'Gesture navigation enabled' : 'Gesture navigation disabled'
                           );
                         },
                         tooltip: 'Toggle gesture navigation',
@@ -252,7 +252,7 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
                 ),
               ),
             ),
-            
+
             // Main content
             Expanded(
               child: Container(
@@ -263,7 +263,7 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const SizedBox(height: 20),
-                      
+
                       // Live Detection button
                       _buildFeatureButton(
                         context: context,
@@ -272,9 +272,9 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
                         subtitle: 'Swipe up to access',
                         onTap: _navigateToLiveDetection,
                       ),
-                      
+
                       const SizedBox(height: 24),
-                      
+
                       // OCR button
                       _buildFeatureButton(
                         context: context,
@@ -283,9 +283,9 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
                         subtitle: 'Swipe down to access',
                         onTap: _navigateToOCR,
                       ),
-                      
+
                       const SizedBox(height: 24),
-                      
+
                       // Gesture instruction panel
                       if (_gestureEnabled && _isInitialized)
                         Container(
@@ -315,7 +315,7 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
       ),
     );
   }
-  
+
   Widget _buildFeatureButton({
     required BuildContext context,
     required IconData icon,

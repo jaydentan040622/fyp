@@ -29,12 +29,11 @@ class GestureRecognitionService {
   final List<GesturePoint> _gesturePoints = [];
   bool _isInitialized = false;
   bool _isRecording = false;
-  
+
   // Global announcement management
   static String? _currentActivePageId;
   static bool _isAnnouncementActive = false;
-  static bool _isSpeaking = false;
-  
+
   // Gesture detection parameters
   static const double _minSwipeDistance = 100.0;
   static const double _maxSwipeVerticalDeviation = 50.0;
@@ -42,7 +41,7 @@ class GestureRecognitionService {
   static const double _maxDownwardLineHorizontalDeviation = 30.0;
   static const double _minUpwardSwipeDistance = 100.0;
   static const double _maxUpwardSwipeHorizontalDeviation = 50.0;
-  
+
   // Callbacks
   Function(GestureType)? _onGestureDetected;
   Function(String)? _onDebugMessage;
@@ -50,24 +49,13 @@ class GestureRecognitionService {
   // Initialize the service
   Future<void> initialize() async {
     if (_isInitialized) return;
-    
+
     try {
       await _flutterTts.setLanguage('en-US');
       await _flutterTts.setSpeechRate(0.6);
       await _flutterTts.setVolume(1.0);
       await _flutterTts.setPitch(1.0);
-      
-      // Set up TTS completion listener
-      _flutterTts.setCompletionHandler(() {
-        _isSpeaking = false;
-        _debugPrint('TTS completed');
-        // Auto-release announcement lock after speech completes
-        if (_isAnnouncementActive) {
-          _isAnnouncementActive = false;
-          _debugPrint('Released announcement lock after speech completion');
-        }
-      });
-      
+
       _isInitialized = true;
       debugPrint('GestureRecognitionService initialized successfully');
     } catch (e) {
@@ -104,7 +92,7 @@ class GestureRecognitionService {
   void endGesture() {
     if (!_isRecording) return;
     _isRecording = false;
-    
+
     if (_gesturePoints.length < 2) {
       _debugPrint('Gesture too short, ignoring');
       return;
@@ -112,13 +100,13 @@ class GestureRecognitionService {
 
     GestureType detectedGesture = _analyzeGesture();
     _debugPrint('Gesture analysis complete: ${detectedGesture.toString()}');
-    
+
     if (detectedGesture != GestureType.unknown) {
       _triggerHapticFeedback(detectedGesture);
       _announceGesture(detectedGesture);
       _onGestureDetected?.call(detectedGesture);
     }
-    
+
     _gesturePoints.clear();
   }
 
@@ -159,9 +147,9 @@ class GestureRecognitionService {
     double verticalDistance = (endY - startY).abs();
 
     // Check for horizontal swipe (left/right)
-    if (horizontalDistance >= _minSwipeDistance && 
+    if (horizontalDistance >= _minSwipeDistance &&
         verticalDistance <= _maxSwipeVerticalDeviation) {
-      
+
       if (endX > startX) {
         return GestureType.swipeRight;
       } else {
@@ -170,9 +158,9 @@ class GestureRecognitionService {
     }
 
     // Check for upward swipe
-    if (verticalDistance >= _minUpwardSwipeDistance && 
+    if (verticalDistance >= _minUpwardSwipeDistance &&
         horizontalDistance <= _maxUpwardSwipeHorizontalDeviation) {
-      
+
       if (endY < startY) { // Negative means upward
         return GestureType.swipeUp;
       }
@@ -194,7 +182,7 @@ class GestureRecognitionService {
     double verticalDistance = endY - startY; // Positive means downward
 
     // Check if downward movement is significant and horizontal is minimal
-    if (verticalDistance >= _minDownwardLineDistance && 
+    if (verticalDistance >= _minDownwardLineDistance &&
         horizontalDistance <= _maxDownwardLineHorizontalDeviation) {
       return GestureType.downwardLine;
     }
@@ -324,7 +312,7 @@ class GestureRecognitionService {
       default:
         return;
     }
-    
+
     speak(message);
   }
 
@@ -338,7 +326,7 @@ class GestureRecognitionService {
     _isAnnouncementActive = true;
     return true;
   }
-  
+
   void clearActiveAnnouncementSource(String pageId) {
     if (_currentActivePageId == pageId) {
       _currentActivePageId = null;
@@ -351,11 +339,11 @@ class GestureRecognitionService {
       }
     }
   }
-  
+
   bool canMakeAnnouncements(String pageId) {
     return !_isAnnouncementActive || _currentActivePageId == pageId;
   }
-  
+
   void stopAllAnnouncements() {
     _flutterTts.stop();
     _currentActivePageId = null;

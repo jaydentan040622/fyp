@@ -16,19 +16,19 @@ class _NavigationPageState extends State<NavigationPage> {
   Timer? _pageAnnouncementTimer;
   bool _gestureEnabled = true;
   bool _isInitialized = false;
-  
+
   final List<String> _features = [
     'Live Location Tracking - Swipe up to access',
     'Transportation routes - Swipe down to access'
   ];
-  
+
   @override
   void initState() {
     super.initState();
     _initializeGestureService();
     _startPageAnnouncements();
   }
-  
+
   @override
   void dispose() {
     _pageAnnouncementTimer?.cancel();
@@ -40,25 +40,25 @@ class _NavigationPageState extends State<NavigationPage> {
   Future<void> _initializeGestureService() async {
     try {
       await _gestureService.initialize();
-      
+
       // Set gesture callback
       _gestureService.setGestureCallback((GestureType gesture) {
         _handleGesture(gesture);
       });
-      
+
       setState(() {
         _isInitialized = true;
       });
-      
+
       // Welcome message
       Future.delayed(const Duration(seconds: 1), () {
         if (mounted) {
           _gestureService.speak(
-            'Navigation page loaded. Swipe up for Live Location Tracking, swipe down for Transportation, or swipe left to go back to main page.'
+              'Navigation page loaded. Swipe up for Live Location Tracking, swipe down for Transportation, or swipe left to go back to main page.'
           );
         }
       });
-      
+
     } catch (e) {
       debugPrint('Error initializing gesture service: $e');
     }
@@ -66,14 +66,14 @@ class _NavigationPageState extends State<NavigationPage> {
 
   void _startPageAnnouncements() {
     _pageAnnouncementTimer?.cancel();
-    
+
     // Register this page as the active announcement source
     if (!_gestureService.setActiveAnnouncementSource('navigation_page')) {
       // Another page is already making announcements, stop all first
       _gestureService.stopAllAnnouncements();
       _gestureService.setActiveAnnouncementSource('navigation_page');
     }
-    
+
     _pageAnnouncementTimer = Timer.periodic(const Duration(seconds: 8), (timer) {
       if (mounted && _isInitialized && _gestureService.canMakeAnnouncements('navigation_page')) {
         _announcePageContent();
@@ -88,7 +88,7 @@ class _NavigationPageState extends State<NavigationPage> {
 
   void _handleGesture(GestureType gesture) {
     if (!_gestureEnabled) return;
-    
+
     switch (gesture) {
       case GestureType.swipeUp:
         _navigateToLiveLocationTracking();
@@ -207,7 +207,7 @@ class _NavigationPageState extends State<NavigationPage> {
                             _gestureEnabled = !_gestureEnabled;
                           });
                           _gestureService.speak(
-                            _gestureEnabled ? 'Gesture navigation enabled' : 'Gesture navigation disabled'
+                              _gestureEnabled ? 'Gesture navigation enabled' : 'Gesture navigation disabled'
                           );
                         },
                         tooltip: 'Toggle gesture navigation',
@@ -217,7 +217,7 @@ class _NavigationPageState extends State<NavigationPage> {
                 ),
               ),
             ),
-            
+
             // Main content
             Expanded(
               child: Container(
@@ -228,7 +228,7 @@ class _NavigationPageState extends State<NavigationPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const SizedBox(height: 20),
-                      
+
                       // Live Location Tracking button
                       _buildFeatureButton(
                         context: context,
@@ -237,9 +237,9 @@ class _NavigationPageState extends State<NavigationPage> {
                         subtitle: 'Swipe up to access',
                         onTap: _navigateToLiveLocationTracking,
                       ),
-                      
+
                       const SizedBox(height: 24),
-                      
+
                       // Transportation button
                       _buildFeatureButton(
                         context: context,
@@ -248,9 +248,9 @@ class _NavigationPageState extends State<NavigationPage> {
                         subtitle: 'Swipe down to access',
                         onTap: _navigateToTransportation,
                       ),
-                      
+
                       const SizedBox(height: 24),
-                      
+
                       // Gesture instruction panel
                       if (_gestureEnabled && _isInitialized)
                         Container(
@@ -280,7 +280,7 @@ class _NavigationPageState extends State<NavigationPage> {
       ),
     );
   }
-  
+
   Widget _buildFeatureButton({
     required BuildContext context,
     required IconData icon,
