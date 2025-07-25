@@ -29,6 +29,7 @@ class GestureRecognitionService {
   final List<GesturePoint> _gesturePoints = [];
   bool _isInitialized = false;
   bool _isRecording = false;
+  bool _isSpeaking = false;
 
   // Global announcement management
   static String? _currentActivePageId;
