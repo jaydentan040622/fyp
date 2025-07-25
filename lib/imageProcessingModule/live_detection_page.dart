@@ -11,6 +11,7 @@ import 'package:vibration/vibration.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:just_audio/just_audio.dart';
 import 'dart:typed_data';
+import '../home.dart';
 
 class LiveDetectionPage extends StatefulWidget {
   const LiveDetectionPage({super.key});
@@ -54,6 +55,11 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
   Timer? _captureTimer;
   Timer? _voiceCommandsTimer;
   Timer? _orientationCheckTimer;
+
+  // Gesture detection variables
+  Offset? _panStartPosition;
+  static const double minSwipeDistance = 100.0;
+  static const double maxVerticalDeviation = 50.0;
   
   @override
   void initState() {
@@ -487,6 +493,55 @@ Prioritize safety information for visually impaired users.
     debugPrint("Playing text alert sound");
     // _textPlayer.play();
   }
+
+  // Gesture detection methods
+  void _onPanStart(DragStartDetails details) {
+    _panStartPosition = details.localPosition;
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    if (_panStartPosition == null) return;
+
+    final Offset panEndPosition = details.localPosition;
+    final double deltaX = panEndPosition.dx - _panStartPosition!.dx;
+    final double deltaY = panEndPosition.dy - _panStartPosition!.dy;
+
+    // Check if it's a horizontal swipe
+    if (deltaX.abs() >= minSwipeDistance && deltaY.abs() <= maxVerticalDeviation) {
+      if (deltaX > 0) {
+        // Swipe Right - Go to Image Processing page
+        _handleSwipeRight();
+      } else {
+        // Swipe Left - Return to main page
+        _handleSwipeLeft();
+      }
+    }
+
+    _panStartPosition = null;
+  }
+
+  void _handleSwipeLeft() {
+    // Provide haptic feedback
+    if (_hapticFeedbackEnabled) {
+      Vibration.vibrate(duration: 100);
+    }
+    
+    // Navigate to main page
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const HomeScreen()),
+      (route) => false,
+    );
+  }
+
+  void _handleSwipeRight() {
+    // Provide haptic feedback
+    if (_hapticFeedbackEnabled) {
+      Vibration.vibrate(duration: 100);
+    }
+    
+    // Navigate back to Image Processing page
+    Navigator.of(context).pop();
+  }
   
   Future<void> _speak(String text) async {
     if (text.isNotEmpty && !_isSpeaking) {
@@ -519,175 +574,179 @@ Prioritize safety information for visually impaired users.
         foregroundColor: Colors.white,
         title: const Text('Live Detection'),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            flex: 3,
-            child: Stack(
-              children: [
-                // Camera Preview
-                _isCameraInitialized
-                    ? CameraPreview(_cameraController!)
-                    : const Center(child: CircularProgressIndicator()),
-                
-                // Voice command indicator
-                if (_isListening)
-                  Positioned(
-                    top: 20,
-                    right: 20,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.7),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.mic, color: Colors.white),
-                          SizedBox(width: 8),
-                          Text('Listening...', style: TextStyle(color: Colors.white)),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Container(
-              padding: const EdgeInsets.all(16.0),
-              width: double.infinity,
-              color: Colors.black87,
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Analysis Result:',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            color: Colors.white,
-                          ),
+      body: GestureDetector(
+        onPanStart: _onPanStart,
+        onPanEnd: _onPanEnd,
+        child: Column(
+          children: [
+            Expanded(
+              flex: 3,
+              child: Stack(
+                children: [
+                  // Camera Preview
+                  _isCameraInitialized
+                      ? CameraPreview(_cameraController!)
+                      : const Center(child: CircularProgressIndicator()),
+                  
+                  // Voice command indicator
+                  if (_isListening)
+                    Positioned(
+                      top: 20,
+                      right: 20,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(20),
                         ),
-                        Row(
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              icon: Icon(
-                                _continuousMode ? Icons.loop : Icons.sync_disabled,
-                                color: Colors.white,
-                              ),
-                              onPressed: _toggleContinuousMode,
-                              tooltip: _continuousMode ? 'Continuous Mode On' : 'Continuous Mode Off',
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                _voiceCommandsEnabled ? Icons.mic : Icons.mic_off,
-                                color: Colors.white,
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  _voiceCommandsEnabled = !_voiceCommandsEnabled;
-                                  if (_voiceCommandsEnabled) {
-                                    _startVoiceCommandListener();
-                                    _speak("Voice commands enabled");
-                                  } else {
-                                    _voiceCommandsTimer?.cancel();
-                                    _speechToText.cancel();
-                                    _speak("Voice commands disabled");
-                                  }
-                                });
-                              },
-                              tooltip: _voiceCommandsEnabled ? 'Voice Commands On' : 'Voice Commands Off',
-                            ),
+                            Icon(Icons.mic, color: Colors.white),
+                            SizedBox(width: 8),
+                            Text('Listening...', style: TextStyle(color: Colors.white)),
                           ],
                         ),
-                      ],
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _detectionResult,
-                      style: const TextStyle(fontSize: 16, color: Colors.white),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        ElevatedButton(
-                          onPressed: _isDetecting ? null : _captureAndAnalyzeFrame,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2561FA),
-                            foregroundColor: Colors.white,
+                ],
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Container(
+                padding: const EdgeInsets.all(16.0),
+                width: double.infinity,
+                color: Colors.black87,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Analysis Result:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              color: Colors.white,
+                            ),
                           ),
-                          child: Text(_isDetecting ? 'Analyzing...' : 'Analyze Now'),
-                        ),
-                        ElevatedButton(
-                          onPressed: _isSpeaking ? null : () => _speak(_detectionResult),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2561FA),
-                            foregroundColor: Colors.white,
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  _continuousMode ? Icons.loop : Icons.sync_disabled,
+                                  color: Colors.white,
+                                ),
+                                onPressed: _toggleContinuousMode,
+                                tooltip: _continuousMode ? 'Continuous Mode On' : 'Continuous Mode Off',
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  _voiceCommandsEnabled ? Icons.mic : Icons.mic_off,
+                                  color: Colors.white,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _voiceCommandsEnabled = !_voiceCommandsEnabled;
+                                    if (_voiceCommandsEnabled) {
+                                      _startVoiceCommandListener();
+                                      _speak("Voice commands enabled");
+                                    } else {
+                                      _voiceCommandsTimer?.cancel();
+                                      _speechToText.cancel();
+                                      _speak("Voice commands disabled");
+                                    }
+                                  });
+                                },
+                                tooltip: _voiceCommandsEnabled ? 'Voice Commands On' : 'Voice Commands Off',
+                              ),
+                            ],
                           ),
-                          child: Text(_isSpeaking ? 'Speaking...' : 'Read Aloud'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _audioFeedbackEnabled = !_audioFeedbackEnabled;
-                            });
-                            _speak(_audioFeedbackEnabled 
-                              ? "Audio feedback enabled" 
-                              : "Audio feedback disabled");
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _audioFeedbackEnabled 
-                              ? const Color(0xFF2561FA) 
-                              : Colors.grey,
-                            foregroundColor: Colors.white,
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _detectionResult,
+                        style: const TextStyle(fontSize: 16, color: Colors.white),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          ElevatedButton(
+                            onPressed: _isDetecting ? null : _captureAndAnalyzeFrame,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2561FA),
+                              foregroundColor: Colors.white,
+                            ),
+                            child: Text(_isDetecting ? 'Analyzing...' : 'Analyze Now'),
                           ),
-                          child: const Text('Audio Cues'),
-                        ),
-                        ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _hapticFeedbackEnabled = !_hapticFeedbackEnabled;
-                            });
-                            
-                            _speak(_hapticFeedbackEnabled 
-                              ? "Haptic feedback enabled" 
-                              : "Haptic feedback disabled");
-                            
-                            // Provide a test vibration
-                            if (_hapticFeedbackEnabled) {
-                              Vibration.vibrate(duration: 300);
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _hapticFeedbackEnabled 
-                              ? const Color(0xFF2561FA) 
-                              : Colors.grey,
-                            foregroundColor: Colors.white,
+                          ElevatedButton(
+                            onPressed: _isSpeaking ? null : () => _speak(_detectionResult),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2561FA),
+                              foregroundColor: Colors.white,
+                            ),
+                            child: Text(_isSpeaking ? 'Speaking...' : 'Read Aloud'),
                           ),
-                          child: const Text('Haptic Feedback'),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                _audioFeedbackEnabled = !_audioFeedbackEnabled;
+                              });
+                              _speak(_audioFeedbackEnabled 
+                                ? "Audio feedback enabled" 
+                                : "Audio feedback disabled");
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _audioFeedbackEnabled 
+                                ? const Color(0xFF2561FA) 
+                                : Colors.grey,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Audio Cues'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                _hapticFeedbackEnabled = !_hapticFeedbackEnabled;
+                              });
+                              
+                              _speak(_hapticFeedbackEnabled 
+                                ? "Haptic feedback enabled" 
+                                : "Haptic feedback disabled");
+                              
+                              // Provide a test vibration
+                              if (_hapticFeedbackEnabled) {
+                                Vibration.vibrate(duration: 300);
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _hapticFeedbackEnabled 
+                                ? const Color(0xFF2561FA) 
+                                : Colors.grey,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Haptic Feedback'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

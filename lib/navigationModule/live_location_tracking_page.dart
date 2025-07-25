@@ -9,6 +9,7 @@ import 'dart:async';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'accessibility_service.dart';
+import '../gesture_recognition_service.dart';
 
 class LiveLocationTrackingPage extends StatefulWidget {
   const LiveLocationTrackingPage({super.key});
@@ -52,12 +53,18 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
   String _lastWords = '';
   Timer? _voiceListeningTimer;
   bool _isListening = false;
+
+  // Gesture Recognition
+  final GestureRecognitionService _gestureService = GestureRecognitionService();
+  final String _pageId = 'live_location_tracking_page';
+  bool _gesturesEnabled = true;
   
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initializeEverything();
+    _initializeGestureService();
   }
 
   @override
@@ -68,6 +75,7 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
     _periodicAnnouncementTimer?.cancel();
     _voiceListeningTimer?.cancel();
     _accessibilityService.dispose();
+    _gestureService.clearActiveAnnouncementSource(_pageId);
     super.dispose();
   }
 
@@ -115,7 +123,7 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
         
         // Welcome message
         await _accessibilityService.speak(
-          'Live location tracking loaded. You can now use voice commands. Say "Where am I" for your location, "Help" for emergency, or "Start" and "Stop" to control location sharing.',
+          'Live location tracking loaded. You can now use voice commands. Say "Where am I" for your location, "Help" for emergency, or "Start" and "Stop" to control location sharing. Gesture controls are also available: swipe left to go back, swipe right for home, swipe up to start tracking, swipe down to stop tracking, draw a circle for emergency, and double-tap to cancel emergency.',
           priority: true
         );
       }
@@ -606,10 +614,43 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
     }
   }
 
+  void _cancelEmergency() {
+    setState(() {
+      _emergencyMode = false;
+    });
+    
+    if (_currentUserId != null) {
+      try {
+        // Update Firebase to indicate emergency has been cancelled
+        FirebaseFirestore.instance
+            .collection('emergencyAlerts')
+            .where('userId', isEqualTo: _currentUserId)
+            .where('isActive', isEqualTo: true)
+            .get()
+            .then((snapshot) {
+              for (var doc in snapshot.docs) {
+                doc.reference.update({'isActive': false});
+              }
+            });
+        
+        // Close any emergency dialogs
+        Navigator.of(context).popUntil((route) {
+          return route.settings.name != 'emergency_dialog';
+        });
+        
+        _accessibilityService.speak('Emergency cancelled', priority: true);
+        _showSuccessSnackBar('Emergency cancelled');
+      } catch (e) {
+        print('❌ Error cancelling emergency: $e');
+      }
+    }
+  }
+
   void _showEmergencyDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
+      routeSettings: const RouteSettings(name: 'emergency_dialog'),
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: Colors.red.shade50,
@@ -635,6 +676,11 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
               const Text(
                 'Emergency alert sent to caregivers!',
                 style: TextStyle(fontSize: 18),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Double tap anywhere on screen to cancel emergency',
+                style: TextStyle(fontSize: 16, fontStyle: FontStyle.italic),
               ),
               const SizedBox(height: 20),
               Column(
@@ -673,11 +719,7 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
           actions: [
             TextButton(
               onPressed: () {
-                setState(() {
-                  _emergencyMode = false;
-                });
-                Navigator.of(context).pop();
-                _accessibilityService.speak('Emergency cancelled.');
+                _cancelEmergency();
               },
               child: const Text('Cancel Emergency', style: TextStyle(fontSize: 16)),
             ),
@@ -729,6 +771,7 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
     status += _permissionGranted ? 'GPS enabled. ' : 'GPS disabled. ';
     status += _isTracking ? 'Tracking active. ' : 'Tracking inactive. ';
     status += _speechEnabled ? 'Voice commands active. ' : 'Voice commands disabled. ';
+    status += _gesturesEnabled ? 'Gesture controls active. ' : 'Gesture controls disabled. ';
     
     if (_caregiverIds.isNotEmpty) {
       status += '${_caregiverIds.length} caregiver${_caregiverIds.length > 1 ? 's' : ''} connected.';
@@ -759,6 +802,59 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
         duration: const Duration(seconds: 4),
       ),
     );
+  }
+
+  // Initialize gesture recognition service
+  Future<void> _initializeGestureService() async {
+    try {
+      await _gestureService.initialize();
+      _gestureService.setGestureCallback(_handleGesture);
+      print('✅ Gesture service initialized successfully');
+    } catch (e) {
+      print('❌ Failed to initialize gesture service: $e');
+    }
+  }
+  
+  // Handle detected gestures
+  void _handleGesture(GestureType gestureType) {
+    if (!_gesturesEnabled) return;
+    
+    print('🖐️ Gesture detected: $gestureType');
+    
+    switch (gestureType) {
+      case GestureType.swipeLeft:
+        _navigateToNavigationPage();
+        break;
+      case GestureType.swipeRight:
+        _navigateToHomePage();
+        break;
+      case GestureType.swipeUp:
+        if (!_isTracking) {
+          _startLiveTracking();
+        }
+        break;
+      case GestureType.downwardLine:
+        if (_isTracking) {
+          _stopLiveTracking();
+        }
+        break;
+      case GestureType.circleGesture:
+        _triggerEmergency();
+        break;
+      default:
+        break;
+    }
+  }
+  
+  // Navigation methods for gestures
+  void _navigateToNavigationPage() {
+    _gestureService.speak('Going back to navigation page');
+    Navigator.pop(context);
+  }
+  
+  void _navigateToHomePage() {
+    _gestureService.speak('Going to home page');
+    Navigator.popUntil(context, (route) => route.isFirst);
   }
 
   @override
@@ -805,198 +901,237 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
                 ],
               ),
             )
-          : Stack(
-              children: [
-                // Google Map
-                GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: _currentPosition != null
-                        ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
-                        : const LatLng(37.7749, -122.4194),
-                    zoom: 16.0,
-                  ),
-                  onMapCreated: (GoogleMapController controller) {
-                    _mapController = controller;
-                  },
-                  markers: _markers,
-                  polylines: _polylines,
-                  circles: _circles,
-                  myLocationEnabled: true,
-                  myLocationButtonEnabled: true,
-                  zoomControlsEnabled: true,
-                  compassEnabled: true,
-                ),
-                
-                // Large Status indicators at top
-                Positioned(
-                  top: 16,
-                  left: 16,
-                  right: 16,
-                  child: Card(
-                    elevation: 8,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildLargeStatusIndicator(
-                            icon: Icons.location_on,
-                            label: 'GPS',
-                            isActive: _permissionGranted,
-                          ),
-                          _buildLargeStatusIndicator(
-                            icon: Icons.track_changes,
-                            label: 'Tracking',
-                            isActive: _isTracking,
-                          ),
-                          _buildLargeStatusIndicator(
-                            icon: Icons.mic,
-                            label: 'Voice',
-                            isActive: _isListening,
-                          ),
-                        ],
-                      ),
+          : GestureDetector(
+              onPanStart: (details) {
+                if (_gesturesEnabled) {
+                  _gestureService.startGesture(details.localPosition);
+                }
+              },
+              onPanUpdate: (details) {
+                if (_gesturesEnabled) {
+                  _gestureService.updateGesture(details.localPosition);
+                }
+              },
+              onPanEnd: (_) {
+                if (_gesturesEnabled) {
+                  _gestureService.endGesture();
+                }
+              },
+              onDoubleTap: () {
+                // Cancel emergency if active
+                if (_emergencyMode) {
+                  _cancelEmergency();
+                }
+              },
+              child: Stack(
+                children: [
+                  // Google Map
+                  GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: _currentPosition != null
+                          ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
+                          : const LatLng(37.7749, -122.4194),
+                      zoom: 16.0,
                     ),
+                    onMapCreated: (GoogleMapController controller) {
+                      _mapController = controller;
+                    },
+                    markers: _markers,
+                    polylines: _polylines,
+                    circles: _circles,
+                    myLocationEnabled: true,
+                    myLocationButtonEnabled: true,
+                    zoomControlsEnabled: true,
+                    compassEnabled: true,
                   ),
-                ),
-                
-                // Voice command indicator
-                if (_isListening)
+                  
+                  // Large Status indicators at top
                   Positioned(
-                    top: 100,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.8),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.mic, color: Colors.white),
-                            SizedBox(width: 8),
-                            Text(
-                              'Listening...',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                
-                // Accessibility settings panel
-                if (_showAccessibilityPanel)
-                  Positioned(
-                    bottom: 100,
+                    top: 16,
                     left: 16,
                     right: 16,
                     child: Card(
                       elevation: 8,
                       child: Padding(
-                        padding: const EdgeInsets.all(20.0),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            Text(
-                              'Accessibility Settings',
-                              style: Theme.of(context).textTheme.headlineSmall,
-                              textAlign: TextAlign.center,
+                            _buildLargeStatusIndicator(
+                              icon: Icons.location_on,
+                              label: 'GPS',
+                              isActive: _permissionGranted,
                             ),
-                            const SizedBox(height: 20),
-                            
-                            // Speech Rate
-                            Text(
-                              'Speech Rate: ${(_accessibilityService.speechRate * 100).toInt()}%',
-                              style: const TextStyle(fontSize: 18),
+                            _buildLargeStatusIndicator(
+                              icon: Icons.track_changes,
+                              label: 'Tracking',
+                              isActive: _isTracking,
                             ),
-                            Slider(
-                              value: _accessibilityService.speechRate,
-                              min: 0.1,
-                              max: 1.0,
-                              divisions: 9,
-                              onChanged: (value) {
-                                _accessibilityService.setSpeechRate(value);
-                                setState(() {});
-                              },
-                            ),
-                            const SizedBox(height: 16),
-                            
-                            // Speech Volume
-                            Text(
-                              'Speech Volume: ${(_accessibilityService.speechVolume * 100).toInt()}%',
-                              style: const TextStyle(fontSize: 18),
-                            ),
-                            Slider(
-                              value: _accessibilityService.speechVolume,
-                              min: 0.0,
-                              max: 1.0,
-                              divisions: 10,
-                              onChanged: (value) {
-                                _accessibilityService.setSpeechVolume(value);
-                                setState(() {});
-                              },
-                            ),
-                            const SizedBox(height: 16),
-                            
-                            // Voice Feedback Toggle
-                            SwitchListTile(
-                              title: const Text('Voice Feedback', style: TextStyle(fontSize: 18)),
-                              value: _accessibilityService.voiceFeedbackEnabled,
-                              onChanged: (value) {
-                                _accessibilityService.setVoiceFeedbackEnabled(value);
-                                setState(() {});
-                              },
-                            ),
-                            
-                            // Voice Commands Toggle
-                            SwitchListTile(
-                              title: const Text('Voice Commands', style: TextStyle(fontSize: 18)),
-                              value: _speechEnabled,
-                              onChanged: (value) {
-                                if (value) {
-                                  _initializeSpeech().then((_) {
-                                    _startListeningIfNeeded();
-                                  });
-                                } else {
-                                  _stopListening();
-                                  setState(() {
-                                    _speechEnabled = false;
-                                  });
-                                }
-                              },
-                            ),
-                            
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: () {
-                                _accessibilityService.speak(
-                                  'Available voice commands: Say "Where am I" to hear your current location. '
-                                  'Say "Help" for emergency assistance. '
-                                  'Say "Start" to begin location sharing. '
-                                  'Say "Stop" to stop location sharing.',
-                                  priority: true
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                minimumSize: const Size(0, 50),
-                                textStyle: const TextStyle(fontSize: 16),
-                              ),
-                              child: const Text('Voice Commands Help'),
+                            _buildLargeStatusIndicator(
+                              icon: Icons.mic,
+                              label: 'Voice',
+                              isActive: _isListening,
                             ),
                           ],
                         ),
                       ),
                     ),
                   ),
-              ],
+                  
+                  // Voice command indicator
+                  if (_isListening)
+                    Positioned(
+                      top: 100,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.8),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.mic, color: Colors.white),
+                              SizedBox(width: 8),
+                              Text(
+                                'Listening...',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  
+                  // Accessibility settings panel
+                  if (_showAccessibilityPanel)
+                    Positioned(
+                      bottom: 100,
+                      left: 16,
+                      right: 16,
+                      child: Card(
+                        elevation: 8,
+                        child: Padding(
+                          padding: const EdgeInsets.all(20.0),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                'Accessibility Settings',
+                                style: Theme.of(context).textTheme.headlineSmall,
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 20),
+                              
+                              // Speech Rate
+                              Text(
+                                'Speech Rate: ${(_accessibilityService.speechRate * 100).toInt()}%',
+                                style: const TextStyle(fontSize: 18),
+                              ),
+                              Slider(
+                                value: _accessibilityService.speechRate,
+                                min: 0.1,
+                                max: 1.0,
+                                divisions: 9,
+                                onChanged: (value) {
+                                  _accessibilityService.setSpeechRate(value);
+                                  setState(() {});
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Speech Volume
+                              Text(
+                                'Speech Volume: ${(_accessibilityService.speechVolume * 100).toInt()}%',
+                                style: const TextStyle(fontSize: 18),
+                              ),
+                              Slider(
+                                value: _accessibilityService.speechVolume,
+                                min: 0.0,
+                                max: 1.0,
+                                divisions: 10,
+                                onChanged: (value) {
+                                  _accessibilityService.setSpeechVolume(value);
+                                  setState(() {});
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Voice Feedback Toggle
+                              SwitchListTile(
+                                title: const Text('Voice Feedback', style: TextStyle(fontSize: 18)),
+                                value: _accessibilityService.voiceFeedbackEnabled,
+                                onChanged: (value) {
+                                  _accessibilityService.setVoiceFeedbackEnabled(value);
+                                  setState(() {});
+                                },
+                              ),
+                              
+                              // Voice Commands Toggle
+                              SwitchListTile(
+                                title: const Text('Voice Commands', style: TextStyle(fontSize: 18)),
+                                value: _speechEnabled,
+                                onChanged: (value) {
+                                  if (value) {
+                                    _initializeSpeech().then((_) {
+                                      _startListeningIfNeeded();
+                                    });
+                                  } else {
+                                    _stopListening();
+                                    setState(() {
+                                      _speechEnabled = false;
+                                    });
+                                  }
+                                },
+                              ),
+                              
+                              // Gesture Recognition Toggle
+                              SwitchListTile(
+                                title: const Text('Gesture Controls', style: TextStyle(fontSize: 18)),
+                                subtitle: const Text('Swipe left: back, right: home, up: start tracking, down: stop tracking, circle: emergency, double-tap: cancel emergency'),
+                                value: _gesturesEnabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _gesturesEnabled = value;
+                                  });
+                                  _accessibilityService.speak(
+                                    value ? 'Gesture controls enabled' : 'Gesture controls disabled',
+                                    priority: false
+                                  );
+                                },
+                              ),
+                              
+                              const SizedBox(height: 16),
+                              ElevatedButton(
+                                onPressed: () {
+                                  _accessibilityService.speak(
+                                    'Available voice commands: Say "Where am I" to hear your current location. '
+                                    'Say "Help" for emergency assistance. '
+                                    'Say "Start" to begin location sharing. '
+                                    'Say "Stop" to stop location sharing.',
+                                    priority: true
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  minimumSize: const Size(0, 50),
+                                  textStyle: const TextStyle(fontSize: 16),
+                                ),
+                                child: const Text('Voice Commands Help'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
       
       // Large floating action buttons

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_tts/flutter_tts.dart';
@@ -11,6 +12,23 @@ import 'package:uuid/uuid.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
+import 'package:vibration/vibration.dart';
+import '../home.dart';
+import '../gesture_recognition_service.dart';
+
+// Global FlutterTts instance to access from other pages
+FlutterTts globalTts = FlutterTts();
+bool isTtsActive = false;
+
+// Helper methods for TTS management across the app
+void stopGlobalTts() {
+  globalTts.stop();
+  isTtsActive = false;
+}
+
+bool isGlobalTtsActive() {
+  return isTtsActive;
+}
 
 class ChatbotPage extends StatefulWidget {
   const ChatbotPage({super.key});
@@ -44,9 +62,34 @@ class _ChatbotPageState extends State<ChatbotPage> {
   late String _userId;
   final uuid = const Uuid();
 
+  // Gesture detection variables
+  Offset? _panStartPosition;
+  static const double minSwipeDistance = 100.0;
+  static const double maxVerticalDeviation = 50.0;
+  
+  // Circle gesture detection variables
+  final List<Offset> _circleGesturePoints = [];
+  bool _isDrawingCircle = false;
+  static const int minCirclePoints = 20;
+  static const double circleDetectionThreshold = 0.7;
+  
+  // Gesture service for stopping announcements from other pages
+  final GestureRecognitionService _gestureService = GestureRecognitionService();
+
   @override
   void initState() {
     super.initState();
+    
+    // Stop any active TTS from previous pages
+    globalTts.stop();
+    isTtsActive = false;
+    
+    // Stop any announcements from the gesture service
+    _gestureService.stopAllAnnouncements();
+    
+    // Set this page as the active announcement source
+    _gestureService.setActiveAnnouncementSource('chatbot_page');
+    
     _initSpeech();
     _initTts();
     _initFirestore();
@@ -69,7 +112,7 @@ class _ChatbotPageState extends State<ChatbotPage> {
     // Add welcome message only if no history exists
     if (_messages.isEmpty) {
       _addAssistantMessage(
-        "Hello! I'm your AI assistant. Tap the large microphone button to speak, or type your message below.",
+        "Hello! I'm your AI assistant. Tap the large microphone button to speak, or type your message below. Draw a circle on the screen to repeat my last message.",
         saveToFirestore: true
       );
     }
@@ -132,8 +175,10 @@ class _ChatbotPageState extends State<ChatbotPage> {
   }
 
   // Initialize speech recognition
-  void _initSpeech() async {
+  Future<void> _initSpeech() async {
+    print('Initializing speech recognition...');
     _speech = stt.SpeechToText();
+    
     _speechEnabled = await _speech.initialize(
       onStatus: (status) {
         print('Speech recognition status: $status');
@@ -148,44 +193,119 @@ class _ChatbotPageState extends State<ChatbotPage> {
         setState(() {
           _isListening = false;
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Speech error: $error')),
+        );
       },
     );
+    
+    print('Speech initialization result: $_speechEnabled');
+    
+    if (_speechEnabled) {
+      print('Speech recognition initialized successfully');
+    } else {
+      print('Failed to initialize speech recognition');
+    }
+    
     setState(() {});
   }
 
   // Initialize text-to-speech
   void _initTts() {
-    _flutterTts = FlutterTts();
+    // Use the global TTS instance
+    _flutterTts = globalTts;
     _flutterTts.setLanguage('en-US');
     _flutterTts.setSpeechRate(0.5); // Slightly slower for better understanding
     _flutterTts.setVolume(1.0);
     _flutterTts.setPitch(1.0);
+    
+    // Set up TTS state listeners
+    _flutterTts.setStartHandler(() {
+      print('TTS Started');
+      isTtsActive = true;
+    });
+    
+    _flutterTts.setCompletionHandler(() {
+      print('TTS Completed');
+      isTtsActive = false;
+    });
+    
+    _flutterTts.setErrorHandler((error) {
+      print('TTS Error: $error');
+      isTtsActive = false;
+    });
+    
+    _flutterTts.setCancelHandler(() {
+      print('TTS Cancelled');
+      isTtsActive = false;
+    });
   }
 
   // Start listening for speech input
   void _startListening() async {
+    print('_startListening called - speechEnabled: $_speechEnabled');
+    
     if (_speechEnabled) {
+      print('Starting speech recognition...');
       setState(() {
         _isListening = true;
       });
       
-      await _speech.listen(
-        onResult: _onSpeechResult,
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 3),
-        partialResults: true,
-        localeId: 'en_US',
-      );
+      try {
+        await _speech.listen(
+          onResult: _onSpeechResult,
+          listenFor: const Duration(seconds: 30),
+          pauseFor: const Duration(seconds: 3),
+          partialResults: true,
+          localeId: 'en_US',
+        );
+        print('Speech listening started successfully');
+      } catch (e) {
+        print('Error starting speech recognition: $e');
+        setState(() {
+          _isListening = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error starting voice input: $e')),
+        );
+      }
     } else {
-      _initSpeech();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Speech recognition is not available. Please try again.')),
-      );
+      print('Speech not enabled, reinitializing...');
+      await _initSpeech();
+      
+      // Try again after initialization
+      if (_speechEnabled) {
+        setState(() {
+          _isListening = true;
+        });
+        
+        try {
+          await _speech.listen(
+            onResult: _onSpeechResult,
+            listenFor: const Duration(seconds: 30),
+            pauseFor: const Duration(seconds: 3),
+            partialResults: true,
+            localeId: 'en_US',
+          );
+          print('Speech listening started after reinitialization');
+        } catch (e) {
+          print('Error starting speech after reinit: $e');
+          setState(() {
+            _isListening = false;
+          });
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Speech recognition is not available on this device')),
+        );
+      }
     }
   }
 
   // Handle speech recognition result
   void _onSpeechResult(SpeechRecognitionResult result) {
+    print('Speech result - Final: ${result.finalResult}, Text: "${result.recognizedWords}"');
+    
     if (result.finalResult) {
       setState(() {
         _isListening = false;
@@ -194,14 +314,249 @@ class _ChatbotPageState extends State<ChatbotPage> {
       
       // Send message automatically when speech is recognized
       if (_messageController.text.isNotEmpty) {
+        print('Sending message from voice input: "${_messageController.text}"');
         _sendMessage();
+        
+        // Show success feedback
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Voice message sent: "${result.recognizedWords}"'),
+            duration: const Duration(seconds: 2),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      } else {
+        print('No text recognized from speech');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No speech was recognized. Please try again.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
       }
     }
   }
 
   // Speak text using TTS
   Future<void> _speak(String text) async {
+    if (text.isEmpty) return;
+    
+    // Stop any announcements from the gesture service
+    _gestureService.stopAllAnnouncements();
+    
+    // Stop any ongoing speech before starting new one
+    await _flutterTts.stop();
+    
+    // Set flag to indicate TTS is active for this page
+    isTtsActive = true;
+    
+    // Speak the text
     await _flutterTts.speak(text);
+  }
+
+  // Gesture detection methods
+  void _onPanStart(DragStartDetails details) {
+    _panStartPosition = details.localPosition;
+    
+    // Start tracking circle gesture
+    setState(() {
+      _circleGesturePoints.clear();
+      _isDrawingCircle = true;
+      _circleGesturePoints.add(details.localPosition);
+    });
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    // Add point to circle gesture tracking
+    if (_isDrawingCircle) {
+      setState(() {
+        _circleGesturePoints.add(details.localPosition);
+      });
+    }
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    if (_panStartPosition == null) return;
+
+    final Offset panEndPosition = details.localPosition;
+    final double deltaX = panEndPosition.dx - _panStartPosition!.dx;
+    final double deltaY = panEndPosition.dy - _panStartPosition!.dy;
+
+    // Check if it's a horizontal swipe
+    if (deltaX.abs() >= minSwipeDistance && deltaY.abs() <= maxVerticalDeviation) {
+      if (deltaX > 0) {
+        // Swipe Right - Go to home page
+        _handleSwipeRight();
+      } else {
+        // Swipe Left - Return to previous page
+        _handleSwipeLeft();
+      }
+    }
+    // Check if it's a vertical swipe up
+    else if (deltaY <= -minSwipeDistance && deltaX.abs() <= maxVerticalDeviation) {
+      // Swipe Up - Start voice input
+      _handleSwipeUp();
+    }
+    // Check if it's a circle gesture
+    else if (_isDrawingCircle && _circleGesturePoints.length >= minCirclePoints) {
+      _detectCircleGesture();
+    }
+
+    _panStartPosition = null;
+    _isDrawingCircle = false;
+  }
+
+  // Detect if the drawn gesture is a circle
+  void _detectCircleGesture() {
+    if (_circleGesturePoints.length < minCirclePoints) return;
+    
+    // Calculate center of the drawn points
+    double sumX = 0;
+    double sumY = 0;
+    
+    for (var point in _circleGesturePoints) {
+      sumX += point.dx;
+      sumY += point.dy;
+    }
+    
+    double centerX = sumX / _circleGesturePoints.length;
+    double centerY = sumY / _circleGesturePoints.length;
+    
+    // Calculate average radius
+    double sumRadius = 0;
+    for (var point in _circleGesturePoints) {
+      double dx = point.dx - centerX;
+      double dy = point.dy - centerY;
+      sumRadius += sqrt(dx * dx + dy * dy);
+    }
+    double avgRadius = sumRadius / _circleGesturePoints.length;
+    
+    // Check if points form a circle by calculating deviation from average radius
+    int pointsOnCircle = 0;
+    for (var point in _circleGesturePoints) {
+      double dx = point.dx - centerX;
+      double dy = point.dy - centerY;
+      double radius = sqrt(dx * dx + dy * dy);
+      
+      // If point is close to average radius, count it as on circle
+      if ((radius / avgRadius).abs() > 0.7 && (radius / avgRadius).abs() < 1.3) {
+        pointsOnCircle++;
+      }
+    }
+    
+    double circleConfidence = pointsOnCircle / _circleGesturePoints.length;
+    
+    // If enough points match a circle pattern
+    if (circleConfidence >= circleDetectionThreshold) {
+      _handleCircleGesture();
+    }
+  }
+
+  void _handleCircleGesture() {
+    // Provide haptic feedback
+    Vibration.vibrate(duration: 100);
+    
+    // Find the last assistant message
+    ChatMessage? lastAssistantMessage;
+    for (int i = _messages.length - 1; i >= 0; i--) {
+      if (!_messages[i].isUser) {
+        lastAssistantMessage = _messages[i];
+        break;
+      }
+    }
+    
+    if (lastAssistantMessage != null) {
+      // Repeat the last assistant message
+      _speak(lastAssistantMessage.text);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Repeating last message'),
+          duration: Duration(seconds: 2),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No assistant message to repeat'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _handleSwipeRight() {
+    // Provide haptic feedback
+    Vibration.vibrate(duration: 100);
+    
+    // Stop TTS before navigation
+    _flutterTts.stop();
+    
+    // Reset flag to allow other pages to use TTS when navigating to home
+    isTtsActive = false;
+    
+    // Clear this page as the active announcement source
+    _gestureService.clearActiveAnnouncementSource('chatbot_page');
+    
+    // Navigate to home page
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const HomeScreen()),
+      (route) => false,
+    );
+  }
+
+  void _handleSwipeLeft() {
+    // Provide haptic feedback
+    Vibration.vibrate(duration: 100);
+    
+    // Stop TTS before navigation
+    _flutterTts.stop();
+    
+    // Reset flag to allow other pages to use TTS when returning to previous page
+    isTtsActive = false;
+    
+    // Clear this page as the active announcement source
+    _gestureService.clearActiveAnnouncementSource('chatbot_page');
+    
+    // Return to previous page
+    Navigator.of(context).pop();
+  }
+
+  void _handleSwipeUp() {
+    // Provide haptic feedback
+    Vibration.vibrate(duration: 100);
+    
+    print('Swipe up detected - Speech enabled: $_speechEnabled, Currently listening: $_isListening');
+    
+    // Start voice input if not already listening
+    if (_isListening) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Voice input is already active'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } else if (!_speechEnabled) {
+      print('Speech not enabled, attempting to reinitialize...');
+      _initSpeech();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Speech recognition is not available. Trying to initialize...'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } else {
+      print('Starting voice input from swipe up gesture');
+      _startListening();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🎤 Voice input activated - Speak now!'),
+          duration: Duration(seconds: 2),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 
   void _addAssistantMessage(String text, {bool saveToFirestore = false}) {
@@ -260,120 +615,125 @@ class _ChatbotPageState extends State<ChatbotPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: _isLoadingHistory
-              ? const Center(
-                  child: CircularProgressIndicator(),
-                )
-              : _messages.isEmpty
-                ? Center(
-                    child: Text(
-                      'No messages yet',
-                      style: TextStyle(
-                        color: Colors.grey[500],
-                        fontSize: 16,
+      body: GestureDetector(
+        onPanStart: _onPanStart,
+        onPanUpdate: _onPanUpdate,
+        onPanEnd: _onPanEnd,
+        child: Column(
+          children: [
+            Expanded(
+              child: _isLoadingHistory
+                ? const Center(
+                    child: CircularProgressIndicator(),
+                  )
+                : _messages.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No messages yet',
+                        style: TextStyle(
+                          color: Colors.grey[500],
+                          fontSize: 16,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _messages.length,
+                      reverse: false,
+                      itemBuilder: (context, index) {
+                        return _messages[index];
+                      },
+                    ),
+            ),
+            if (_isTyping)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
                       ),
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _messages.length,
-                    reverse: false,
-                    itemBuilder: (context, index) {
-                      return _messages[index];
-                    },
+                    SizedBox(width: 8),
+                    Text("Assistant is typing..."),
+                  ],
+                ),
+              ),
+            // Large microphone button for blind users
+            Container(
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(vertical: 16.0),
+              child: GestureDetector(
+                onTap: () {
+                  if (!_isListening) {
+                    _startListening();
+                  }
+                },
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _isListening ? Colors.red : const Color(0xFF2561FA),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        spreadRadius: 2,
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
                   ),
-          ),
-          if (_isTyping)
-            const Padding(
-              padding: EdgeInsets.all(12),
+                  child: Icon(
+                    _isListening ? Icons.mic : Icons.mic_none,
+                    color: Colors.white,
+                    size: 60,
+                  ),
+                ),
+              ),
+            ),
+            // Text input
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+              color: Colors.grey.shade100,
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
+                  Expanded(
+                    child: TextField(
+                      controller: _messageController,
+                      decoration: InputDecoration(
+                        hintText: _isListening ? 'Listening...' : 'How can I help you today?',
+                        fillColor: Colors.white,
+                        filled: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.all(12),
+                      ),
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _sendMessage(),
                     ),
                   ),
-                  SizedBox(width: 8),
-                  Text("Assistant is typing..."),
+                  const SizedBox(width: 8),
+                  FloatingActionButton(
+                    onPressed: _sendMessage,
+                    backgroundColor: const Color(0xFF2561FA),
+                    elevation: 0,
+                    child: const Icon(
+                      Icons.send,
+                      color: Colors.white,
+                    ),
+                  ),
                 ],
               ),
             ),
-          // Large microphone button for blind users
-          Container(
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: GestureDetector(
-              onTap: () {
-                if (!_isListening) {
-                  _startListening();
-                }
-              },
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _isListening ? Colors.red : const Color(0xFF2561FA),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      spreadRadius: 2,
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  _isListening ? Icons.mic : Icons.mic_none,
-                  color: Colors.white,
-                  size: 60,
-                ),
-              ),
-            ),
-          ),
-          // Text input
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
-            color: Colors.grey.shade100,
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _messageController,
-                    decoration: InputDecoration(
-                      hintText: _isListening ? 'Listening...' : 'How can I help you today?',
-                      fillColor: Colors.white,
-                      filled: true,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.all(12),
-                    ),
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _sendMessage(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FloatingActionButton(
-                  onPressed: _sendMessage,
-                  backgroundColor: const Color(0xFF2561FA),
-                  elevation: 0,
-                  child: const Icon(
-                    Icons.send,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -404,7 +764,7 @@ class _ChatbotPageState extends State<ChatbotPage> {
       
       // Add welcome message
       _addAssistantMessage(
-        "Hello! I'm your AI assistant. Tap the large microphone button to speak, or type your message below.",
+        "Hello! I'm your AI assistant. Tap the large microphone button to speak, or type your message below. Draw a circle on the screen to repeat my last message.",
         saveToFirestore: true
       );
       
@@ -532,6 +892,10 @@ class _ChatbotPageState extends State<ChatbotPage> {
   void dispose() {
     _messageController.dispose();
     _flutterTts.stop();
+    
+    // Clear this page as the active announcement source
+    _gestureService.clearActiveAnnouncementSource('chatbot_page');
+    
     super.dispose();
   }
 }
