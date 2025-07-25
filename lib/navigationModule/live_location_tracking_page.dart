@@ -123,7 +123,7 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
         
         // Welcome message
         await _accessibilityService.speak(
-          'Live location tracking loaded. You can now use voice commands. Say "Where am I" for your location, "Help" for emergency, or "Start" and "Stop" to control location sharing. Gesture controls are also available: swipe left to go back, swipe right for home, swipe up to start tracking, swipe down to stop tracking, draw a circle for emergency, and double-tap to cancel emergency.',
+          'Live location tracking loaded. You can now use voice commands. Say "Where am I" for your location, "Help" for emergency, or "Start" and "Stop" to control location sharing. Gesture controls are also available: swipe left to go back, swipe right for home, swipe up to start tracking, swipe down to stop tracking, draw a circle for emergency',
           priority: true
         );
       }
@@ -647,11 +647,20 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
   }
 
   void _showEmergencyDialog() {
+    // Show the emergency dialog
     showDialog(
       context: context,
       barrierDismissible: false,
       routeSettings: const RouteSettings(name: 'emergency_dialog'),
       builder: (BuildContext context) {
+        // Set a timer to automatically close the dialog after 5 seconds
+        Timer(const Duration(seconds: 5), () {
+          // Check if the dialog is still showing before trying to close it
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
+        });
+        
         return AlertDialog(
           backgroundColor: Colors.red.shade50,
           title: Row(
@@ -678,9 +687,9 @@ class _LiveLocationTrackingPageState extends State<LiveLocationTrackingPage> wit
                 style: TextStyle(fontSize: 18),
               ),
               const SizedBox(height: 10),
-              const Text(
-                'Double tap anywhere on screen to cancel emergency',
-                style: TextStyle(fontSize: 16, fontStyle: FontStyle.italic),
+              Text(
+                'This dialog will close automatically in 5 seconds',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
               ),
               const SizedBox(height: 20),
               Column(
