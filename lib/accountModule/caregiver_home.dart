@@ -6,7 +6,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:vibration/vibration.dart';
 import 'dart:async';
 import 'user_profile.dart';
-import 'connection_requests_screen.dart';
 
 class CaregiverHomeScreen extends StatefulWidget {
   const CaregiverHomeScreen({super.key});
@@ -622,54 +621,11 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
                           },
                         ),
                         _buildActionCard(
-                          icon: Icons.history,
-                          title: 'Location History',
-                          subtitle: 'View past locations',
-                          color: Colors.green,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const LocationHistoryScreen(),
-                            ),
-                          ),
-                        ),
-                        _buildActionCard(
-                          icon: Icons.route,
-                          title: 'Route Monitoring',
-                          subtitle: 'Track route deviations',
-                          color: Colors.orange,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const RouteMonitoringScreen(),
-                            ),
-                          ),
-                        ),
-                        _buildActionCard(
                           icon: Icons.person_add,
                           title: 'Add Blind User',
                           subtitle: 'Connect with users',
                           color: Colors.purple,
                           onTap: () => _showAddBlindUserDialog(),
-                        ),
-                        _buildActionCard(
-                          icon: Icons.people,
-                          title: 'Manage Connections',
-                          subtitle: 'View and manage users',
-                          color: Colors.teal,
-                          onTap: () => _showConnectionRequestsDialog(),
-                        ),
-                        _buildActionCard(
-                          icon: Icons.emergency,
-                          title: 'Emergency Center',
-                          subtitle: 'Handle emergencies',
-                          color: Colors.red,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const EmergencyCenterScreen(),
-                            ),
-                          ),
                         ),
                       ],
                     ),
@@ -766,16 +722,7 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
                                   ],
                                 ),
                               ),
-                              const PopupMenuItem(
-                                value: 'history',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.history, size: 20),
-                                    SizedBox(width: 8),
-                                    Text('View History'),
-                                  ],
-                                ),
-                              ),
+
                             ],
                             onSelected: (value) {
                               switch (value) {
@@ -789,14 +736,6 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
                                   break;
                                 case 'call':
                                   _callUser(user);
-                                  break;
-                                case 'history':
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => LocationHistoryScreen(userId: user['id']),
-                                    ),
-                                  );
                                   break;
                               }
                             },
@@ -1149,15 +1088,7 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
     }
   }
   
-  // Show dialog to manage connection requests
-  void _showConnectionRequestsDialog() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const ConnectionRequestsScreen(),
-      ),
-    );
-  }
+
 }
 
 // Placeholder screens for caregiver features
@@ -1872,103 +1803,4 @@ class _LiveLocationScreenState extends State<LiveLocationScreen> {
   }
 }
 
-class LocationHistoryScreen extends StatelessWidget {
-  final String? userId;
-  
-  const LocationHistoryScreen({super.key, this.userId});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Location History'),
-        backgroundColor: const Color(0xFF2561FA),
-        foregroundColor: Colors.white,
-      ),
-      body: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.history, size: 64, color: Colors.green),
-            SizedBox(height: 16),
-            Text(
-              'Location History',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Past movement history will be displayed here',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class RouteMonitoringScreen extends StatelessWidget {
-  const RouteMonitoringScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Route Monitoring'),
-        backgroundColor: const Color(0xFF2561FA),
-        foregroundColor: Colors.white,
-      ),
-      body: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.route, size: 64, color: Colors.orange),
-            SizedBox(height: 16),
-            Text(
-              'Route Monitoring',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Route deviation alerts will be displayed here',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class EmergencyCenterScreen extends StatelessWidget {
-  const EmergencyCenterScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Emergency Center'),
-        backgroundColor: const Color(0xFF2561FA),
-        foregroundColor: Colors.white,
-      ),
-      body: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.emergency, size: 64, color: Colors.red),
-            SizedBox(height: 16),
-            Text(
-              'Emergency Center',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Emergency response tools will be available here',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-} 
+ 
