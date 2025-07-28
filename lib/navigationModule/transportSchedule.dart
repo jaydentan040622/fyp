@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'dart:typed_data';
 import 'package:flutter_tts/flutter_tts.dart';
 import '../home.dart';
+import 'package:vibration/vibration.dart';
 
 class TransportSchedule extends StatefulWidget {
   const TransportSchedule({Key? key}) : super(key: key);
@@ -773,7 +774,10 @@ class _TransportScheduleState extends State<TransportSchedule> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.arrow_back, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () async {
+                        await Vibration.vibrate(duration: 100);
+                        Navigator.pop(context);
+                      },
                     ),
                     const Expanded(
                       child: Text(
@@ -820,10 +824,12 @@ class _TransportScheduleState extends State<TransportSchedule> {
                 if (details.primaryVelocity != null) {
                   if (details.primaryVelocity! < 0) {
                     // Swipe left (right-to-left): go back
+                    await Vibration.vibrate(duration: 100);
                     await flutterTts.stop();
                     Navigator.pop(context);
                   } else if (details.primaryVelocity! > 0) {
                     // Swipe right (left-to-right): go to main menu
+                    await Vibration.vibrate(duration: 100);
                     await flutterTts.stop();
                     Navigator.pushAndRemoveUntil(
                       context,

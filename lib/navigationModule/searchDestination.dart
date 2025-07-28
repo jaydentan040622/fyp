@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'dart:math';
+import 'package:vibration/vibration.dart';
 
 class SearchDestination extends StatefulWidget {
   const SearchDestination({super.key});
@@ -494,13 +495,15 @@ class _SearchDestinationState extends State<SearchDestination> {
                   _listen();
                 }
               },
-              onHorizontalDragEnd: (details) {
+              onHorizontalDragEnd: (details) async {
                 if (details.primaryVelocity != null) {
                   if (details.primaryVelocity! < 0) {
                     // Swipe left (right-to-left): go back
+                    await Vibration.vibrate(duration: 100);
                     Navigator.pop(context);
                   } else if (details.primaryVelocity! > 0) {
                     // Swipe right (left-to-right): go to main menu
+                    await Vibration.vibrate(duration: 100);
                     Navigator.pushAndRemoveUntil(
                       context,
                       MaterialPageRoute(builder: (context) => HomeScreen()),

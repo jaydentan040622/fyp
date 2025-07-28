@@ -136,14 +136,16 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
   void _navigateToOCR() {
     _gestureService.speak('Opening OCR Text Recognition');
     _pauseAnnouncements();
+    // Force stop all announcements to ensure clean transition
+    _gestureService.stopAllAnnouncements();
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => const OCRPage(),
       ),
     ).then((_) {
-      // Always resume announcements when returning
-      if (mounted) {
+      // Only resume if we're still on this page and it's mounted
+      if (mounted && _isInitialized) {
         debugPrint('Returned from OCR - resuming announcements');
         _resumeAnnouncements();
       }
@@ -165,21 +167,12 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
   }
 
   void _resumeAnnouncements() {
-    if (mounted && _isInitialized) {
-      // Clear any conflicting announcement sources first
-      _gestureService.stopAllAnnouncements();
-      
-      // Wait a moment then restart announcements
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted && _isInitialized) {
-          _startPageAnnouncements();
-          
-          // Give immediate feedback that we're back
-          Future.delayed(const Duration(milliseconds: 100), () {
-            if (mounted) {
-              _gestureService.speak('Returned to Image Processing page.');
-            }
-          });
+    if (mounted && _isInitialized && ModalRoute.of(context)?.isCurrent == true) {
+      // Only resume if this page is the top of the stack
+      _startPageAnnouncements();
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+          _gestureService.speak('Returned to Image Processing page.');
         }
       });
     }

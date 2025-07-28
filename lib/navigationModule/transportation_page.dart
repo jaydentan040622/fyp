@@ -4,6 +4,7 @@ import 'package:fyp/accountModule/app.dart';
 import 'package:fyp/home.dart';
 import 'searchDestination.dart';
 import 'transportSchedule.dart';
+import 'package:vibration/vibration.dart';
 
 class TransportationPage extends StatefulWidget {
   const TransportationPage({super.key});
@@ -76,10 +77,12 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
       if (details.primaryVelocity! < 0) {
         // Swipe from down to up
         await flutterTts.stop();
+        await Vibration.vibrate(duration: 100);
         Navigator.push(context, MaterialPageRoute(builder: (context) => SearchDestination()));
       } else if (details.primaryVelocity! > 0) {
         // Swipe from up to down
         await flutterTts.stop();
+        await Vibration.vibrate(duration: 100);
         Navigator.push(context, MaterialPageRoute(builder: (context) => TransportSchedule()));
       }
     }
@@ -104,6 +107,7 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
                       icon: const Icon(Icons.arrow_back, color: Colors.white),
                       onPressed: () async {
                         await flutterTts.stop();
+                        await Vibration.vibrate(duration: 100);
                         Navigator.pop(context);
                       },
                     ),
@@ -145,10 +149,12 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
                         if (details.primaryVelocity! < 0) {
                           // Swipe left (right-to-left): go back
                           await flutterTts.stop();
+                          await Vibration.vibrate(duration: 100);
                           Navigator.pop(context);
                         } else if (details.primaryVelocity! > 0) {
                           // Swipe right (left-to-right): go to main menu
                           await flutterTts.stop();
+                          await Vibration.vibrate(duration: 100);
                           Navigator.pushAndRemoveUntil(
                             context,
                             MaterialPageRoute(builder: (context) => HomeScreen()),
@@ -164,6 +170,7 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
                           child: GestureDetector(
                             onTap: () async {
                               await flutterTts.stop();
+                              await Vibration.vibrate(duration: 100);
                               Navigator.push(context, MaterialPageRoute(builder: (context) => SearchDestination()));
                             },
                             child: SizedBox(
@@ -208,6 +215,7 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
                           child: GestureDetector(
                             onTap: () async {
                               await flutterTts.stop();
+                              await Vibration.vibrate(duration: 100);
                               Navigator.push(context, MaterialPageRoute(builder: (context) => TransportSchedule()));
                             },
                             child: SizedBox(

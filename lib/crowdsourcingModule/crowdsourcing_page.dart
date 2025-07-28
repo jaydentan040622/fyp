@@ -121,13 +121,18 @@ class _CrowdsourcingPageState extends State<CrowdsourcingPage> {
   void _navigateToVoiceNote() {
     _gestureService.speak('Opening Voice Note');
     _pauseAnnouncements();
+    // Force stop all announcements to ensure clean transition
+    _gestureService.stopAllAnnouncements();
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => const VoiceNotePage(),
       ),
     ).then((_) {
-      _resumeAnnouncements();
+      // Only resume if we're still on this page and it's mounted
+      if (mounted && _isInitialized) {
+        _resumeAnnouncements();
+      }
     });
   }
 

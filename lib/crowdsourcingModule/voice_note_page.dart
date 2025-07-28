@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fyp/home.dart';
 import 'package:record/record.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -12,7 +13,9 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:vibration/vibration.dart';
 
+import '../imageProcessingModule/image_processing_page.dart';
 import '../navigationModule/navigation_page.dart';
+import '../gesture_recognition_service.dart';
 import 'saved_audio.dart';
 
 // Move VoiceNamingDialog and _VoiceNamingDialogState to the very top-level, before VoiceNotePage
@@ -207,6 +210,7 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
   final AudioRecorder _audioRecorder = AudioRecorder();
   final FlutterTts flutterTts = FlutterTts();
   final SpeechToText _speechToText = SpeechToText();
+  final GestureRecognitionService _gestureService = GestureRecognitionService();
   bool _isRecording = false;
   String? _recordedFilePath;
   bool _isUploading = false;
@@ -269,6 +273,7 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
   void initState() {
     super.initState();
     _initializeTts();
+    _initializeGestureService();
     WidgetsBinding.instance.addPostFrameCallback((_) => _speakGuide());
   }
 
@@ -279,8 +284,53 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
     await flutterTts.setPitch(1.0);
   }
 
+  Future<void> _initializeGestureService() async {
+    try {
+      await _gestureService.initialize();
+    } catch (e) {
+      debugPrint('Error initializing gesture service: $e');
+    }
+  }
+
   Future<void> _speakGuide() async {
+    debugPrint('Voice Note: Starting speakGuide - stopping all existing announcements');
+
+    // Stop all existing announcements from other pages first
+    _gestureService.stopAllAnnouncements();
     await flutterTts.stop();
+
+    // Specifically clear crowdsourcing page announcements since that's likely the source
+    _gestureService.clearActiveAnnouncementSource('crowdsourcing_page');
+
+    // Force stop any ongoing speech multiple times to ensure it's stopped
+    await Future.delayed(const Duration(milliseconds: 200));
+    await flutterTts.stop();
+    await Future.delayed(const Duration(milliseconds: 200));
+    await flutterTts.stop();
+
+    // Create a temporary TTS instance to force stop any other TTS instances
+    final tempTts = FlutterTts();
+    await tempTts.stop();
+    await tempTts.setLanguage("en-US");
+    await tempTts.setSpeechRate(0.4);
+    await tempTts.setVolume(1.0);
+    await tempTts.setPitch(1.0);
+
+    // Wait longer to ensure any periodic timers are completely stopped
+    // This should be longer than the 8-second timer interval
+    await Future.delayed(const Duration(seconds: 2));
+
+    // One final stop to ensure silence
+    await flutterTts.stop();
+    await tempTts.stop();
+
+    // Check if widget is still mounted before proceeding
+    if (!mounted) {
+      debugPrint('Voice Note: Widget no longer mounted, stopping speakGuide');
+      return;
+    }
+
+    debugPrint('Voice Note: Starting welcome message');
     await flutterTts.speak(
         "Welcome to the voice note page. Swipe up to start recording. While recording, swipe up again to stop. Swipe down to go to the saved audio page. Swipe left to go back. Swipe right to go to the main menu. After recording, hold anywhere in screen to start voice input for naming audio or use manual input."
     );
@@ -572,6 +622,8 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
   @override
   void dispose() {
     _audioRecorder.dispose();
+    flutterTts.stop(); // Stop any ongoing TTS
+    _gestureService.stopAllAnnouncements(); // Stop all announcements
     super.dispose();
   }
 
@@ -696,12 +748,14 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
               if (details.primaryVelocity != null) {
                 if (details.primaryVelocity! < 0) {
                   // Swipe left (right-to-left): go back
+                  await Vibration.vibrate(duration: 100);
                   Navigator.pop(context);
                 } else if (details.primaryVelocity! > 0) {
                   // Swipe right (left-to-right): go to main menu
+                  await Vibration.vibrate(duration: 100);
                   Navigator.pushAndRemoveUntil(
                     context,
-                    MaterialPageRoute(builder: (context) => NavigationPage()),
+                    MaterialPageRoute(builder: (context) => HomeScreen()),
                         (route) => false,
                   );
                 }
