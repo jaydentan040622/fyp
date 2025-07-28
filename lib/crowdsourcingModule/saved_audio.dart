@@ -2,12 +2,13 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:fyp/home.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
-import '../../navigationModule/navigation_page.dart';
+import 'package:vibration/vibration.dart';
 
 // Global audio player manager to ensure only one recording plays at a time
 class AudioPlayerManager {
@@ -624,48 +625,18 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
                         () => HorizontalDragGestureRecognizer(),
                         (HorizontalDragGestureRecognizer instance) {
                       instance
-                        ..onStart = (details) {
-                          print('Horizontal drag started');
-                          setState(() {
-                            _debugMessage = 'Horizontal drag started!';
-                          });
-                        }
                         ..onEnd = (details) async {
-                          print('Horizontal drag detected - velocity: ${details.primaryVelocity}');
-                          setState(() {
-                            _debugMessage = 'Horizontal drag detected! Velocity: ${details.primaryVelocity}';
-                          });
                           if (details.primaryVelocity != null) {
                             if (details.primaryVelocity! < 0) {
                               // Swipe left (right-to-left): go back
-                              print('Swipe left detected - going back');
-                              setState(() {
-                                _debugMessage = 'Swipe left detected!';
-                              });
-                              Future.delayed(const Duration(seconds: 2), () {
-                                if (mounted) {
-                                  setState(() {
-                                    _debugMessage = '';
-                                  });
-                                }
-                              });
+                              await Vibration.vibrate(duration: 100);
                               Navigator.pop(context);
                             } else if (details.primaryVelocity! > 0) {
                               // Swipe right (left-to-right): go to main menu
-                              print('Swipe right detected - going to main menu');
-                              setState(() {
-                                _debugMessage = 'Swipe right detected!';
-                              });
-                              Future.delayed(const Duration(seconds: 2), () {
-                                if (mounted) {
-                                  setState(() {
-                                    _debugMessage = '';
-                                  });
-                                }
-                              });
+                              await Vibration.vibrate(duration: 100);
                               Navigator.pushAndRemoveUntil(
                                 context,
-                                MaterialPageRoute(builder: (context) => NavigationPage()),
+                                MaterialPageRoute(builder: (context) => HomeScreen()),
                                     (route) => false,
                               );
                             }
@@ -678,10 +649,6 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
                         (LongPressGestureRecognizer instance) {
                       instance
                         ..onLongPress = () async {
-                          print('Long press detected - activating voice command');
-                          setState(() {
-                            _debugMessage = 'Long press detected! Activating voice command...';
-                          });
                           await _handleVoiceCommand();
                         };
                     },

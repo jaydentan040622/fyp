@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_tts/flutter_tts.dart';
 import '../home.dart';
+import 'package:vibration/vibration.dart';
 
 class TransportRoutes extends StatefulWidget {
   final LatLng destination;
@@ -482,10 +483,12 @@ class _TransportRoutesState extends State<TransportRoutes> {
                   if (details.primaryVelocity! < 0) {
                     // Swipe left (right-to-left): go back
                     await flutterTts.stop();
+                    await Vibration.vibrate(duration: 100);
                     Navigator.pop(context);
                   } else if (details.primaryVelocity! > 0) {
                     // Swipe right (left-to-right): go to main menu
                     await flutterTts.stop();
+                    await Vibration.vibrate(duration: 100);
                     Navigator.pushAndRemoveUntil(
                       context,
                       MaterialPageRoute(builder: (context) => HomeScreen()),
