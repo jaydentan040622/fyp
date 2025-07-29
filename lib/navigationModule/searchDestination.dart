@@ -49,7 +49,7 @@ class _SearchDestinationState extends State<SearchDestination> {
 
   Future<void> _initializeTts() async {
     await flutterTts.setLanguage("en-US");
-    await flutterTts.setSpeechRate(0.35);
+    await flutterTts.setSpeechRate(0.4);
     await flutterTts.setVolume(1.0);
     await flutterTts.setPitch(1.0);
     flutterTts.setStartHandler(() {
@@ -72,7 +72,7 @@ class _SearchDestinationState extends State<SearchDestination> {
   Future<void> _speakGuide() async {
     await flutterTts.stop();
     await flutterTts.speak(
-        "Welcome to the search destination page. Swipe up to start voice input, or type your destination in the search box. Swipe left to go back, swipe right to go to the main menu."
+        "Welcome to the search destination page. Swipe down to start voice input, or type your destination in the search box. Swipe left to go back, swipe right to go to the main menu."
     );
   }
 
@@ -81,19 +81,6 @@ class _SearchDestinationState extends State<SearchDestination> {
     setState(() {
       _recentSearches = prefs.getStringList('recentSearches') ?? [];
     });
-  }
-
-  Future<void> _saveRecentSearch(String search) async {
-    final prefs = await SharedPreferences.getInstance();
-    List<String> searches = prefs.getStringList('recentSearches') ?? [];
-    if (!searches.contains(search)) {
-      searches.insert(0, search);
-      if (searches.length > 5) searches.removeLast();
-      await prefs.setStringList('recentSearches', searches);
-      setState(() {
-        _recentSearches = searches;
-      });
-    }
   }
 
   Future<void> _initializeLocation() async {
@@ -465,7 +452,13 @@ class _SearchDestinationState extends State<SearchDestination> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.arrow_back, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () async {
+                        await flutterTts.stop();
+                        await flutterTts.speak("Going back");
+                        await Future.delayed(const Duration(milliseconds: 2000));
+                        await Vibration.vibrate(duration: 100);
+                        Navigator.pop(context);
+                      },
                     ),
                     const Expanded(
                       child: Text(
@@ -499,10 +492,18 @@ class _SearchDestinationState extends State<SearchDestination> {
                 if (details.primaryVelocity != null) {
                   if (details.primaryVelocity! < 0) {
                     // Swipe left (right-to-left): go back
+                    await flutterTts.stop();
+                    await Future.delayed(const Duration(milliseconds: 200));
+                    await flutterTts.speak("Going back");
+                    await Future.delayed(const Duration(milliseconds: 1500));
                     await Vibration.vibrate(duration: 100);
                     Navigator.pop(context);
                   } else if (details.primaryVelocity! > 0) {
                     // Swipe right (left-to-right): go to main menu
+                    await flutterTts.stop();
+                    await Future.delayed(const Duration(milliseconds: 200));
+                    await flutterTts.speak("Going to main menu");
+                    await Future.delayed(const Duration(milliseconds: 2500));
                     await Vibration.vibrate(duration: 100);
                     Navigator.pushAndRemoveUntil(
                       context,

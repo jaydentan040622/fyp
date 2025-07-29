@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:fyp/home.dart';
 import 'package:record/record.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,7 +12,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:vibration/vibration.dart';
 
-import '../imageProcessingModule/image_processing_page.dart';
+import '../home.dart';
 import '../navigationModule/navigation_page.dart';
 import '../gesture_recognition_service.dart';
 import 'saved_audio.dart';
@@ -293,7 +292,12 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
   }
 
   Future<void> _speakGuide() async {
-    debugPrint('Voice Note: Starting speakGuide - stopping all existing announcements');
+    debugPrint('Voice Note: Starting speakGuide - allowing navigation announcement to complete first');
+
+    // Wait for navigation announcement to complete before stopping announcements
+    await Future.delayed(const Duration(seconds: 2));
+
+    debugPrint('Voice Note: Now stopping all existing announcements');
 
     // Stop all existing announcements from other pages first
     _gestureService.stopAllAnnouncements();
@@ -748,10 +752,18 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
               if (details.primaryVelocity != null) {
                 if (details.primaryVelocity! < 0) {
                   // Swipe left (right-to-left): go back
+                  await flutterTts.stop();
+                  await Future.delayed(const Duration(milliseconds: 200));
+                  await flutterTts.speak("Going back");
+                  await Future.delayed(const Duration(milliseconds: 1500));
                   await Vibration.vibrate(duration: 100);
                   Navigator.pop(context);
                 } else if (details.primaryVelocity! > 0) {
                   // Swipe right (left-to-right): go to main menu
+                  await flutterTts.stop();
+                  await Future.delayed(const Duration(milliseconds: 200));
+                  await flutterTts.speak("Going to main menu");
+                  await Future.delayed(const Duration(milliseconds: 2500));
                   await Vibration.vibrate(duration: 100);
                   Navigator.pushAndRemoveUntil(
                     context,
