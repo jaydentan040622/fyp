@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:fyp/home.dart';
 import 'package:record/record.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,7 +12,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:vibration/vibration.dart';
 
-import '../imageProcessingModule/image_processing_page.dart';
+import '../home.dart';
 import '../navigationModule/navigation_page.dart';
 import '../gesture_recognition_service.dart';
 import 'saved_audio.dart';
@@ -216,8 +215,6 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
   bool _isUploading = false;
   String? _pendingFileName;
   bool _isListening = false; // For listening indicator
-  String _testHeardWords = '';
-  String _testDebug = '';
 
   // TODO: Replace with your actual Google Cloud Speech-to-Text API key
   static const String googleApiKey = 'AIzaSyCnLmkL79qMenl0Sn7N4KN38RSoayv-_Bs';
@@ -293,7 +290,9 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
   }
 
   Future<void> _speakGuide() async {
-    debugPrint('Voice Note: Starting speakGuide - stopping all existing announcements');
+    debugPrint('Voice Note: Starting speakGuide - allowing navigation announcement to complete first');
+
+    debugPrint('Voice Note: Now stopping all existing announcements');
 
     // Stop all existing announcements from other pages first
     _gestureService.stopAllAnnouncements();
@@ -315,10 +314,6 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
     await tempTts.setSpeechRate(0.4);
     await tempTts.setVolume(1.0);
     await tempTts.setPitch(1.0);
-
-    // Wait longer to ensure any periodic timers are completely stopped
-    // This should be longer than the 8-second timer interval
-    await Future.delayed(const Duration(seconds: 2));
 
     // One final stop to ensure silence
     await flutterTts.stop();
@@ -384,32 +379,80 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
             onLongPress: dialogListening
                 ? null
                 : () async {
-              await flutterTts.speak("Listening for file name. Please say the name after the beep.");
+              await flutterTts.speak("Listening for file name.");
               setStateDialog(() {
                 dialogListening = true;
                 dialogHeardWords = '';
                 dialogDebug = '';
               });
-              await _testSpeechToText(
-                onHeard: (words) async {
+              await _speechToText.stop(); // Ensure previous session is stopped
+              bool available = await _speechToText.initialize(
+                onError: (error) {
                   setStateDialog(() {
-                    dialogHeardWords = words;
-                    controller.text = words;
+                    dialogListening = false;
+                    dialogDebug = 'Error: ${error.errorMsg}';
                   });
-                  // Vibrate when speech is detected
-                  if (words.isNotEmpty) {
-                    Vibration.hasVibrator().then((hasVibrator) {
-                      if (hasVibrator ?? false) {
-                        Vibration.vibrate(duration: 100);
-                      }
-                    });
-                    // Auto-save and close dialog with recognized name
-                    Navigator.of(context).pop(words);
-                  }
                 },
-                onDebug: (msg) => setStateDialog(() => dialogDebug = msg),
-                onListening: (listening) => setStateDialog(() => dialogListening = listening),
               );
+              if (!available) {
+                setStateDialog(() {
+                  dialogListening = false;
+                  dialogDebug = 'Speech recognition not available or permission denied.';
+                });
+                return;
+              }
+              setStateDialog(() {
+                dialogListening = true;
+                dialogDebug = 'Listening for file name...';
+              });
+              await Future.delayed(const Duration(seconds: 1));
+              if (!mounted) return;
+              await _speechToText.stop(); // Stop again just before listening
+              try {
+                await _speechToText.listen(
+                  onResult: (speechResult) async {
+                    setStateDialog(() {
+                      dialogHeardWords = speechResult.recognizedWords;
+                      controller.text = speechResult.recognizedWords;
+                      dialogDebug = 'Heard: ${speechResult.recognizedWords} (Confidence: ${speechResult.confidence})';
+                    });
+                    if (speechResult.finalResult && speechResult.recognizedWords.isNotEmpty) {
+                      // Vibrate when speech is detected
+                      Vibration.hasVibrator().then((hasVibrator) {
+                        if (hasVibrator ?? false) {
+                          Vibration.vibrate(duration: 100);
+                        }
+                      });
+                      // Auto-save and close dialog with recognized name
+                      Navigator.of(context).pop(speechResult.recognizedWords);
+                    }
+                  },
+                  listenFor: const Duration(seconds: 10),
+                  pauseFor: const Duration(seconds: 3),
+                  partialResults: true,
+                  localeId: 'en_US',
+                  cancelOnError: false,
+                  listenMode: ListenMode.confirmation,
+                );
+              } catch (e) {
+                setStateDialog(() {
+                  dialogListening = false;
+                  dialogDebug = 'Error: $e';
+                });
+              }
+              // Timeout fallback
+              await Future.delayed(const Duration(seconds: 12));
+              if (mounted && dialogListening) {
+                setStateDialog(() {
+                  dialogListening = false;
+                  if (dialogHeardWords.isEmpty) {
+                    dialogDebug = 'No speech recognized.';
+                    // Speak "try again" when no speech is recognized
+                    flutterTts.speak("Try again");
+                  }
+                });
+                await _speechToText.stop();
+              }
             },
             child: AlertDialog(
               title: const Text('Name your audio file'),
@@ -479,31 +522,6 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
     }
   }
 
-  Future<String?> _getFileNameByVoice() async {
-    bool available = await _speechToText.initialize();
-    if (!available) return null;
-    await flutterTts.speak("Please say the file name you want to use.");
-    await Future.delayed(const Duration(seconds: 1));
-    String? result;
-    await _speechToText.listen(
-      onResult: (speechResult) {
-        if (speechResult.finalResult && speechResult.recognizedWords.isNotEmpty) {
-          result = speechResult.recognizedWords;
-        }
-      },
-      listenFor: const Duration(seconds: 5),
-      pauseFor: const Duration(seconds: 2),
-      partialResults: false,
-      localeId: 'en_US',
-      cancelOnError: true,
-      listenMode: ListenMode.confirmation,
-    );
-    // Wait for speech or timeout
-    await Future.delayed(const Duration(seconds: 6));
-    await _speechToText.stop();
-    return result;
-  }
-
   Future<void> _transcribeAndSave(File audioFile, String fileName) async {
     setState(() {
       _isUploading = true;
@@ -537,87 +555,7 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
     }
   }
 
-  // Add a test function for speech-to-text
-  Future<void> _testSpeechToText({
-    void Function(String)? onHeard,
-    void Function(String)? onDebug,
-    void Function(bool)? onListening,
-  }) async {
-    print('[Test] --- Starting testSpeechToText ---');
-    onListening?.call(true);
-    onHeard?.call('');
-    onDebug?.call('');
-    await _speechToText.stop(); // Ensure previous session is stopped
-    print('[Test] Stopped any previous session');
-    bool available = await _speechToText.initialize(
-      onError: (error) {
-        print('[Test] onError: $error');
-        onListening?.call(false);
-        onDebug?.call('Error: ${error.errorMsg}');
-      },
-    );
-    print('[Test] SpeechToText initialized: $available');
-    if (!available) {
-      onListening?.call(false);
-      onDebug?.call('Speech recognition not available or permission denied.');
-      print('[Test] Initialization failed');
-      return;
-    }
-    // Simulate the same flow as saved_audio.dart
-    onListening?.call(true);
-    onDebug?.call('Listening for voice command...');
-    print('[Test] Set _isListening true, debug updated');
-    await flutterTts.speak("Name your audio file");
-    print('[Test] TTS prompt spoken');
-    await Future.delayed(const Duration(seconds: 1));
-    if (!mounted) {
-      print('[Test] Widget not mounted after TTS');
-      return;
-    }
-    await _speechToText.stop(); // Stop again just before listening
-    print('[Test] Stopped before listen');
-    try {
-      print('[Test] Attempting to start speech recognition...');
-      await _speechToText.listen(
-        onResult: (speechResult) async {
-          print('[Test] onResult: ${speechResult.recognizedWords} (final: ${speechResult.finalResult})');
-          onHeard?.call(speechResult.recognizedWords);
-          onDebug?.call('Heard: ${speechResult.recognizedWords} (Confidence: ${speechResult.confidence})');
-          if (speechResult.finalResult) {
-            onListening?.call(false);
-            onDebug?.call('Final result.');
-            await _speechToText.stop();
-            print('[Test] Final result, stopped listening');
-          }
-        },
-        listenFor: const Duration(seconds: 10),
-        pauseFor: const Duration(seconds: 3),
-        partialResults: true,
-        localeId: 'en_US',
-        cancelOnError: false,
-        listenMode: ListenMode.confirmation,
-      );
-      print('[Test] Speech recognition started successfully');
-      onDebug?.call('Speech recognition started successfully');
-    } catch (e) {
-      print('[Test] Error starting speech recognition: $e');
-      if (!mounted) return;
-      onListening?.call(false);
-      onDebug?.call('Error: $e');
-      await flutterTts.speak("Error starting speech recognition.");
-    }
-    // Timeout fallback
-    await Future.delayed(const Duration(seconds: 12));
-    onListening?.call(false);
-    if (onHeard != null && onDebug != null) {
-      if (_testHeardWords.isEmpty) {
-        onDebug('No speech recognized.');
-      }
-    }
-    print('[Test] Timeout, stopping listen');
-    await _speechToText.stop();
-    print('[Test] --- End of testSpeechToText ---');
-  }
+
 
   @override
   void dispose() {
@@ -636,6 +574,17 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
             backgroundColor: const Color(0xFF2561FA),
             foregroundColor: Colors.white,
             title: const Text('Voice Note'),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () async {
+                await flutterTts.stop();
+                await Future.delayed(const Duration(milliseconds: 200));
+                await flutterTts.speak("Going back");
+                await Future.delayed(const Duration(milliseconds: 1500));
+                await Vibration.vibrate(duration: 100);
+                Navigator.pop(context);
+              },
+            ),
             actions: [
               IconButton(
                 icon: const Icon(Icons.library_music),
@@ -647,76 +596,7 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
                   );
                 },
               ),
-              // Add a temporary test button
-              IconButton(
-                icon: const Icon(Icons.mic),
-                tooltip: 'Test Speech-to-Text',
-                onPressed: () async {
-                  await showDialog(
-                    context: context,
-                    builder: (context) {
-                      String dialogHeardWords = '';
-                      String dialogDebug = '';
-                      bool dialogListening = false;
-                      return StatefulBuilder(
-                        builder: (context, setStateDialog) => AlertDialog(
-                          title: const Text('Test Speech-to-Text'),
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ElevatedButton(
-                                onPressed: () async {
-                                  setStateDialog(() {
-                                    dialogListening = true;
-                                    dialogHeardWords = '';
-                                    dialogDebug = '';
-                                  });
-                                  await _testSpeechToText(
-                                    onHeard: (words) => setStateDialog(() => dialogHeardWords = words),
-                                    onDebug: (msg) => setStateDialog(() => dialogDebug = msg),
-                                    onListening: (listening) => setStateDialog(() => dialogListening = listening),
-                                  );
-                                },
-                                child: const Text('Start Listening'),
-                              ),
-                              const SizedBox(height: 12),
-                              if (dialogListening)
-                                const Text('Listening...', style: TextStyle(color: Colors.red)),
-                              if (dialogHeardWords.isNotEmpty)
-                                Column(
-                                  children: [
-                                    const Text('Recognized Words:', style: TextStyle(fontWeight: FontWeight.bold)),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 8.0),
-                                      child: Text(
-                                        dialogHeardWords,
-                                        style: const TextStyle(fontSize: 20, color: Colors.blue, fontWeight: FontWeight.bold),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              if (dialogDebug.isNotEmpty)
-                                Text(dialogDebug, style: const TextStyle(color: Colors.orange)),
-                            ],
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              child: const Text('Close'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                  setState(() {
-                    _isListening = false;
-                    _testHeardWords = '';
-                    _testDebug = '';
-                  });
-                },
-              ),
+
             ],
           ),
           body: GestureDetector(
@@ -748,10 +628,18 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
               if (details.primaryVelocity != null) {
                 if (details.primaryVelocity! < 0) {
                   // Swipe left (right-to-left): go back
+                  await flutterTts.stop();
+                  await Future.delayed(const Duration(milliseconds: 200));
+                  await flutterTts.speak("Going back");
+                  await Future.delayed(const Duration(milliseconds: 1500));
                   await Vibration.vibrate(duration: 100);
                   Navigator.pop(context);
                 } else if (details.primaryVelocity! > 0) {
                   // Swipe right (left-to-right): go to main menu
+                  await flutterTts.stop();
+                  await Future.delayed(const Duration(milliseconds: 200));
+                  await flutterTts.speak("Going to main menu");
+                  await Future.delayed(const Duration(milliseconds: 2500));
                   await Vibration.vibrate(duration: 100);
                   Navigator.pushAndRemoveUntil(
                     context,

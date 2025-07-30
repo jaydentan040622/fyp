@@ -45,7 +45,7 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
 
   Future<void> _initializeTts() async {
     await flutterTts.setLanguage("en-US");
-    await flutterTts.setSpeechRate(0.35);
+    await flutterTts.setSpeechRate(0.4);
     await flutterTts.setVolume(1.0);
     await flutterTts.setPitch(1.0);
     flutterTts.setStartHandler(() {
@@ -77,11 +77,15 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
       if (details.primaryVelocity! < 0) {
         // Swipe from down to up
         await flutterTts.stop();
+        await flutterTts.speak("Opening Search Destination");
+        await Future.delayed(const Duration(milliseconds: 3000));
         await Vibration.vibrate(duration: 100);
         Navigator.push(context, MaterialPageRoute(builder: (context) => SearchDestination()));
       } else if (details.primaryVelocity! > 0) {
         // Swipe from up to down
         await flutterTts.stop();
+        await flutterTts.speak("Opening Public Transport Lines");
+        await Future.delayed(const Duration(milliseconds: 3000));
         await Vibration.vibrate(duration: 100);
         Navigator.push(context, MaterialPageRoute(builder: (context) => TransportSchedule()));
       }
@@ -107,6 +111,8 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
                       icon: const Icon(Icons.arrow_back, color: Colors.white),
                       onPressed: () async {
                         await flutterTts.stop();
+                        await flutterTts.speak("Going back");
+                        await Future.delayed(const Duration(milliseconds: 2000));
                         await Vibration.vibrate(duration: 100);
                         Navigator.pop(context);
                       },
@@ -149,11 +155,17 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
                         if (details.primaryVelocity! < 0) {
                           // Swipe left (right-to-left): go back
                           await flutterTts.stop();
+                          await Future.delayed(const Duration(milliseconds: 200));
+                          await flutterTts.speak("Going back");
+                          await Future.delayed(const Duration(milliseconds: 1500));
                           await Vibration.vibrate(duration: 100);
                           Navigator.pop(context);
                         } else if (details.primaryVelocity! > 0) {
                           // Swipe right (left-to-right): go to main menu
                           await flutterTts.stop();
+                          await Future.delayed(const Duration(milliseconds: 200));
+                          await flutterTts.speak("Going to main menu");
+                          await Future.delayed(const Duration(milliseconds: 2500));
                           await Vibration.vibrate(duration: 100);
                           Navigator.pushAndRemoveUntil(
                             context,

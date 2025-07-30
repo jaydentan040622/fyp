@@ -56,10 +56,12 @@ class _OCRPageState extends State<OCRPage> {
   Future<void> _pickFromGallery() async {
     await _aggressiveStopAnnouncements();
     await _flutterTts.speak("Opening gallery to select image");
+    await Future.delayed(const Duration(milliseconds: 2000));
     final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
     if (image != null) {
       await _aggressiveStopAnnouncements();
       await _flutterTts.speak("Image selected, processing text");
+      await Future.delayed(const Duration(milliseconds: 2000));
       // Wait for TTS to finish before processing
       await _processAndNavigate(File(image.path));
     } else {
@@ -178,6 +180,7 @@ class _OCRPageState extends State<OCRPage> {
               await _flutterTts.stop();
               await Future.delayed(const Duration(milliseconds: 200));
               await _flutterTts.speak("Going back");
+              await Future.delayed(const Duration(milliseconds: 1500));
               await Vibration.vibrate(duration: 100);
               Navigator.pop(context);
             } else if (details.primaryVelocity! > 0) {
@@ -185,6 +188,7 @@ class _OCRPageState extends State<OCRPage> {
               await _flutterTts.stop();
               await Future.delayed(const Duration(milliseconds: 200));
               await _flutterTts.speak("Going to main menu");
+              await Future.delayed(const Duration(milliseconds: 1500));
               await Vibration.vibrate(duration: 100);
               Navigator.pushAndRemoveUntil(
                 context,
@@ -210,6 +214,8 @@ class _OCRPageState extends State<OCRPage> {
                         icon: const Icon(Icons.arrow_back, color: Colors.white),
                         onPressed: () async {
                           await _flutterTts.speak("Going back");
+                          await Future.delayed(const Duration(milliseconds: 1500));
+                          await Vibration.vibrate(duration: 100);
                           Navigator.pop(context);
                         },
                       ),
@@ -374,17 +380,13 @@ class _OCRResultPageState extends State<OCRResultPage> {
     await _flutterTts.setVolume(1.0);
     await _flutterTts.setPitch(1.0);
 
-    // 1. Speak the page guide and wait for it to finish
-    await _flutterTts.speak("OCR Result page. Swipe up to read extracted text. Swipe left to go back. Swipe right to go to image processing main page.");
-    await Future.delayed(const Duration(milliseconds: 300)); // Small buffer
-
     if (widget.extractedText.isNotEmpty) {
-      // 2. Speak the success message and wait for it to finish
+      // 1. Speak the success message and wait for it to finish
       await _aggressiveStopAnnouncements();
       await _flutterTts.speak("Text extracted successfully. Reading the recognized text.");
-      await Future.delayed(const Duration(milliseconds: 300)); // Small buffer
+      await Future.delayed(const Duration(milliseconds: 5000));
 
-      // 3. Now read the extracted text
+      // 2. Now read the extracted text
       await _aggressiveStopAnnouncements();
       await _readExtractedText();
     } else {
@@ -446,19 +448,15 @@ class _OCRResultPageState extends State<OCRResultPage> {
     return Scaffold(
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onVerticalDragEnd: (details) async {
-          if (details.primaryVelocity != null) {
-            if (details.primaryVelocity! < 0) {
-              // Swipe up - read extracted text
-              if (widget.extractedText.isNotEmpty) {
-                await _aggressiveStopAnnouncements();
-                await _flutterTts.speak("Reading extracted text again");
-                await _readExtractedText();
-              } else {
-                await _aggressiveStopAnnouncements();
-                await _flutterTts.speak("No text to read");
-              }
-            }
+        onLongPress: () async {
+          // Long press - read extracted text
+          if (widget.extractedText.isNotEmpty) {
+            await _aggressiveStopAnnouncements();
+            await _flutterTts.speak("Reading extracted text again");
+            await _readExtractedText();
+          } else {
+            await _aggressiveStopAnnouncements();
+            await _flutterTts.speak("No text to read");
           }
         },
         onHorizontalDragEnd: (details) async {
@@ -467,12 +465,14 @@ class _OCRResultPageState extends State<OCRResultPage> {
               // Swipe left (right-to-left): go back
               await _aggressiveStopAnnouncements();
               await _flutterTts.speak("Going back to OCR page");
+              await Future.delayed(const Duration(milliseconds: 2500));
               await Vibration.vibrate(duration: 100);
               Navigator.pop(context);
             } else if (details.primaryVelocity! > 0) {
               // Swipe right (left-to-right): go to main page
               await _aggressiveStopAnnouncements();
               await _flutterTts.speak("Going back to main page");
+              await Future.delayed(const Duration(milliseconds: 2500));
               await Vibration.vibrate(duration: 100);
               Navigator.pushAndRemoveUntil(
                 context,
@@ -491,6 +491,7 @@ class _OCRResultPageState extends State<OCRResultPage> {
               icon: const Icon(Icons.arrow_back),
               onPressed: () async {
                 await _flutterTts.speak("Going back");
+                await Future.delayed(const Duration(milliseconds: 1500));
                 Navigator.pop(context);
               },
             ),

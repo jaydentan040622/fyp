@@ -301,8 +301,8 @@ class _TransportRoutesState extends State<TransportRoutes> {
       speechText += "Route $routeNumber: $routeName, takes about $duration. ";
     }
 
-    if (routes.length > 3) {
-      speechText += "There are ${routes.length - 3} more route options available. ";
+    if (routes.length > 10) {
+      speechText += "There are ${routes.length - 10} more route options available. ";
     }
 
     speechText += "Please select your preferred route from the list below.";
@@ -434,7 +434,13 @@ class _TransportRoutesState extends State<TransportRoutes> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.arrow_back, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () async {
+                        await flutterTts.stop();
+                        await flutterTts.speak("Going back");
+                        await Future.delayed(const Duration(milliseconds: 2000));
+                        await Vibration.vibrate(duration: 100);
+                        Navigator.pop(context);
+                      },
                     ),
                     Expanded(
                       child: Column(
@@ -483,11 +489,17 @@ class _TransportRoutesState extends State<TransportRoutes> {
                   if (details.primaryVelocity! < 0) {
                     // Swipe left (right-to-left): go back
                     await flutterTts.stop();
+                    await Future.delayed(const Duration(milliseconds: 200));
+                    await flutterTts.speak("Going back");
+                    await Future.delayed(const Duration(milliseconds: 2500));
                     await Vibration.vibrate(duration: 100);
                     Navigator.pop(context);
                   } else if (details.primaryVelocity! > 0) {
                     // Swipe right (left-to-right): go to main menu
                     await flutterTts.stop();
+                    await Future.delayed(const Duration(milliseconds: 200));
+                    await flutterTts.speak("Going to main menu");
+                    await Future.delayed(const Duration(milliseconds: 2500));
                     await Vibration.vibrate(duration: 100);
                     Navigator.pushAndRemoveUntil(
                       context,

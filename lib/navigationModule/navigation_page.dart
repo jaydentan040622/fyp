@@ -117,8 +117,9 @@ class _NavigationPageState extends State<NavigationPage> {
     });
   }
 
-  void _navigateToTransportation() {
+  Future<void> _navigateToTransportation() async {
     _gestureService.speak('Opening Transportation');
+    await Future.delayed(const Duration(milliseconds: 2000));
     _pauseAnnouncements();
     Navigator.push(
       context,

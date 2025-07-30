@@ -175,7 +175,7 @@ class _TransportScheduleState extends State<TransportSchedule> {
           'short_name': route['route_short_name'] ?? '',
           'color': routeColor,
           'frequency': frequencyStr,
-          'status': '', // Don't set default status
+          'status': '',
           'stations': [],
         };
       }
@@ -775,6 +775,9 @@ class _TransportScheduleState extends State<TransportSchedule> {
                     IconButton(
                       icon: const Icon(Icons.arrow_back, color: Colors.white),
                       onPressed: () async {
+                        await flutterTts.stop();
+                        await flutterTts.speak("Going back");
+                        await Future.delayed(const Duration(milliseconds: 2000));
                         await Vibration.vibrate(duration: 100);
                         Navigator.pop(context);
                       },
@@ -824,13 +827,19 @@ class _TransportScheduleState extends State<TransportSchedule> {
                 if (details.primaryVelocity != null) {
                   if (details.primaryVelocity! < 0) {
                     // Swipe left (right-to-left): go back
-                    await Vibration.vibrate(duration: 100);
                     await flutterTts.stop();
+                    await Future.delayed(const Duration(milliseconds: 200));
+                    await flutterTts.speak("Going back");
+                    await Future.delayed(const Duration(milliseconds: 2500));
+                    await Vibration.vibrate(duration: 100);
                     Navigator.pop(context);
                   } else if (details.primaryVelocity! > 0) {
                     // Swipe right (left-to-right): go to main menu
-                    await Vibration.vibrate(duration: 100);
                     await flutterTts.stop();
+                    await Future.delayed(const Duration(milliseconds: 200));
+                    await flutterTts.speak("Going to main menu");
+                    await Future.delayed(const Duration(milliseconds: 2500));
+                    await Vibration.vibrate(duration: 100);
                     Navigator.pushAndRemoveUntil(
                       context,
                       MaterialPageRoute(builder: (context) => HomeScreen()),
