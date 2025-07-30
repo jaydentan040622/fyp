@@ -156,8 +156,8 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
                           // Swipe left (right-to-left): go back
                           await flutterTts.stop();
                           await Future.delayed(const Duration(milliseconds: 200));
-                          await flutterTts.speak("Going to Navigation Page");
-                          await Future.delayed(const Duration(milliseconds: 2500));
+                          await flutterTts.speak("Going back");
+                          await Future.delayed(const Duration(milliseconds: 1500));
                           await Vibration.vibrate(duration: 100);
                           Navigator.pop(context);
                         } else if (details.primaryVelocity! > 0) {

@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'caregiver_services.dart';
 import 'auth_gate.dart';
 import 'connection_requests_screen.dart';
@@ -18,7 +23,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
   final _emergencyContactController = TextEditingController();
-  
+
   bool _isLoading = false;
   bool _isEditing = false;
   String? _profileImageUrl;
@@ -26,6 +31,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   String? _caregiverEmail;
   String? _caregiverId;
   final _caregiverEmailController = TextEditingController();
+  final ImagePicker _imagePicker = ImagePicker();
+  bool _isUploadingImage = false;
 
   @override
   void initState() {
@@ -36,7 +43,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   Future<void> _loadUserData() async {
     setState(() { _isLoading = true; });
     final user = FirebaseAuth.instance.currentUser;
-    
+
     if (user == null) {
       if (mounted) {
         setState(() { _isLoading = false; });
@@ -47,19 +54,19 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
     try {
       print('Loading user data for UID: ${user.uid}');
-      
+
       // Fetch data from "userprofile" collection
       final doc = await FirebaseFirestore.instance
           .collection('userprofile')
           .doc(user.uid)
           .get();
-      
+
       print('Document exists: ${doc.exists}');
-      
+
       if (doc.exists && mounted) {
         final data = doc.data();
         print('Document data: $data');
-        
+
         setState(() {
           // Safely extract data with null checks
           _usernameController.text = data?['username']?.toString() ?? '';
@@ -67,22 +74,34 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           _passwordController.text = ''; // Never display password
           _phoneController.text = data?['phone']?.toString() ?? '';
           _emergencyContactController.text = data?['emergencyContact']?.toString() ?? '';
-          _profileImageUrl = data?['profileImage']?.toString();
+          // Check for base64 image first, then fallback to URL
+          if (data?['profileImageBase64'] != null) {
+            // Store base64 data for display
+            _profileImageUrl = 'data:image/jpeg;base64,${data?['profileImageBase64']}';
+            print('Profile image loaded from base64 data');
+          } else if (data?['profileImage'] != null) {
+            // Fallback to URL if no base64
+            _profileImageUrl = data?['profileImage']?.toString();
+            print('Profile image loaded from URL');
+          } else {
+            _profileImageUrl = null;
+            print('No profile image found');
+          }
           _userType = data?['userType']?.toString() ?? 'blind_user';
           _caregiverEmail = data?['caregiverEmail']?.toString();
           _caregiverId = data?['caregiverId']?.toString();
         });
-        
+
         print('Profile data loaded successfully');
         print('User type: $_userType');
         print('Caregiver email: $_caregiverEmail');
-        
+
       } else if (!doc.exists && mounted) {
         print('User profile document does not exist, creating default profile');
-        
+
         // Create a default profile if it doesn't exist
         await _createDefaultProfile(user);
-        
+
         // Reload data after creating default profile
         await _loadUserData();
         return;
@@ -93,7 +112,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         _showSnackBar('Error loading profile data: ${e.toString()}', isError: true);
       }
     }
-    
+
     if (mounted) {
       setState(() { _isLoading = false; });
     }
@@ -102,7 +121,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   Future<void> _createDefaultProfile(User user) async {
     try {
       print('Creating default profile for user: ${user.uid}');
-      
+
       final defaultData = {
         'username': user.displayName ?? '',
         'email': user.email ?? '',
@@ -112,14 +131,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
-      
+
       await FirebaseFirestore.instance
           .collection('userprofile')
           .doc(user.uid)
           .set(defaultData);
-      
+
       print('Default profile created successfully');
-      
+
     } catch (e) {
       print('Error creating default profile: $e');
       throw Exception('Failed to create user profile: $e');
@@ -128,7 +147,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   void _showSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -142,17 +161,63 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     );
   }
 
+  // Email validation method
+  bool _isValidEmail(String email) {
+    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+    return emailRegex.hasMatch(email);
+  }
+
+  // Phone number validation method
+  bool _isValidPhone(String phone) {
+    // Remove all non-digit characters
+    final digitsOnly = phone.replaceAll(RegExp(r'[^\d]'), '');
+    // Check if it's 10 or 11 digits
+    return digitsOnly.length >= 10 && digitsOnly.length <= 11;
+  }
+
+  // Clean phone number (remove symbols)
+  String _cleanPhoneNumber(String phone) {
+    return phone.replaceAll(RegExp(r'[^\d]'), '');
+  }
+
   Future<void> _saveProfile() async {
-    // Validate inputs
-    if (_usernameController.text.trim().isEmpty ||
-        _emailController.text.trim().isEmpty) {
-      _showSnackBar('Username and email are required', isError: true);
+    // Comprehensive validation
+    final username = _usernameController.text.trim();
+    final email = _emailController.text.trim();
+    final phone = _phoneController.text.trim();
+    final emergencyContact = _emergencyContactController.text.trim();
+
+    // Check if required fields are filled (except password)
+    if (username.isEmpty) {
+      _showSnackBar('Username is required', isError: true);
       return;
     }
-    
+
+    if (phone.isEmpty) {
+      _showSnackBar('Phone number is required', isError: true);
+      return;
+    }
+
+    if (emergencyContact.isEmpty) {
+      _showSnackBar('Emergency contact is required', isError: true);
+      return;
+    }
+
+    // Validate phone number
+    if (!_isValidPhone(phone)) {
+      _showSnackBar('Phone number must be 10 or 11 digits only (no symbols)', isError: true);
+      return;
+    }
+
+    // Validate emergency contact
+    if (!_isValidPhone(emergencyContact)) {
+      _showSnackBar('Emergency contact must be 10 or 11 digits only (no symbols)', isError: true);
+      return;
+    }
+
     setState(() { _isLoading = true; });
     final user = FirebaseAuth.instance.currentUser;
-    
+
     if (user == null) {
       if (mounted) {
         setState(() { _isLoading = false; });
@@ -160,25 +225,25 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       }
       return;
     }
-    
+
     try {
       print('Saving profile for user: ${user.uid}');
-      
-      // Prepare update data
+
+      // Prepare update data with cleaned phone numbers
       final updateData = <String, dynamic>{
-        'username': _usernameController.text.trim(),
-        'email': _emailController.text.trim(),
-        'phone': _phoneController.text.trim(),
-        'emergencyContact': _emergencyContactController.text.trim(),
+        'username': username,
+        'email': email,
+        'phone': _cleanPhoneNumber(phone),
+        'emergencyContact': _cleanPhoneNumber(emergencyContact),
         'userType': _userType,
         'updatedAt': FieldValue.serverTimestamp(),
       };
-      
+
       // Only update password if a new one is provided
       if (_passwordController.text.trim().isNotEmpty) {
         updateData['password'] = _passwordController.text.trim();
       }
-      
+
       // Preserve existing caregiver data if it exists
       if (_caregiverId != null) {
         updateData['caregiverId'] = _caregiverId;
@@ -186,13 +251,13 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       if (_caregiverEmail != null) {
         updateData['caregiverEmail'] = _caregiverEmail;
       }
-      
+
       print('Update data: $updateData');
-      
+
       // Check if document exists, if not create it
       final docRef = FirebaseFirestore.instance.collection('userprofile').doc(user.uid);
       final docSnapshot = await docRef.get();
-      
+
       if (docSnapshot.exists) {
         await docRef.update(updateData);
         print('Profile updated successfully');
@@ -202,18 +267,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         await docRef.set(updateData);
         print('Profile created successfully');
       }
-      
-      // Update email in FirebaseAuth if changed
-      if (_emailController.text.trim() != user.email) {
-        try {
-          await user.updateEmail(_emailController.text.trim());
-          print('FirebaseAuth email updated');
-        } catch (authError) {
-          print('Error updating FirebaseAuth email: $authError');
-          // Continue even if auth email update fails
-        }
-      }
-      
+
+
+
       // Update password if not empty
       if (_passwordController.text.trim().isNotEmpty) {
         try {
@@ -224,19 +280,19 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           // Continue even if auth password update fails
         }
       }
-      
+
       if (mounted) {
-        setState(() { 
-          _isEditing = false; 
+        setState(() {
+          _isEditing = false;
           _passwordController.text = ''; // Clear password field after update
         });
-        
+
         _showSnackBar('Profile updated successfully!');
-        
+
         // Reload data to ensure UI is in sync
         await _loadUserData();
       }
-      
+
     } catch (e) {
       print('Error saving profile: $e');
       if (mounted) {
@@ -266,11 +322,11 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     try {
       print('Adding caregiver: $email');
       await CaregiverServices.addCaregiverConnection(caregiverEmail: email);
-      
+
       if (mounted) {
         _showSnackBar('Caregiver connection request sent successfully!');
         _caregiverEmailController.clear();
-        
+
         // Reload user data to get updated caregiver info
         await _loadUserData();
       }
@@ -286,8 +342,268 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
-  bool _isValidEmail(String email) {
-    return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
+  Future<void> _pickAndUploadImage() async {
+    try {
+      setState(() {
+        _isUploadingImage = true;
+      });
+
+      // Pick image from gallery
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 80,
+      );
+
+      if (image == null) {
+        setState(() {
+          _isUploadingImage = false;
+        });
+        _showSnackBar('No image selected', isError: true);
+        print('No image selected');
+        return;
+      }
+
+      // Show the image immediately
+      setState(() {
+        _profileImageUrl = image.path;
+      });
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        _showSnackBar('User not authenticated', isError: true);
+        setState(() {
+          _isUploadingImage = false;
+        });
+        print('User not authenticated');
+        return;
+      }
+
+      // Convert image to base64 for storage in Firestore
+      final File imageFile = File(image.path);
+      final List<int> imageBytes = await imageFile.readAsBytes();
+      final String base64Image = base64Encode(imageBytes);
+
+      print('Image size: ${imageBytes.length} bytes');
+      print('Base64 size: ${base64Image.length} characters');
+
+      // Check if image is too large for Firestore (1MB limit)
+      if (base64Image.length > 1000000) {
+        _showSnackBar('Image too large. Please choose a smaller image.', isError: true);
+        setState(() {
+          _isUploadingImage = false;
+        });
+        return;
+      }
+
+      // Update Firestore with the base64 image data
+      try {
+        await FirebaseFirestore.instance
+            .collection('userprofile')
+            .doc(user.uid)
+            .update({
+          'profileImageBase64': base64Image,
+          'profileImage': null, // Clear any previous URL
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        print('Firestore updated with base64 image data');
+      } catch (e) {
+        print('Error updating Firestore: $e');
+        _showSnackBar('Error updating Firestore: $e', isError: true);
+        setState(() {
+          _isUploadingImage = false;
+        });
+        return;
+      }
+
+      // Update local state to show the image
+      setState(() {
+        _profileImageUrl = image.path; // Keep local file path for display
+        _isUploadingImage = false;
+      });
+
+      _showSnackBar('Profile image updated successfully!');
+    } catch (e) {
+      print('Error uploading image: $e');
+      _showSnackBar('Error uploading image: ${e.toString()}', isError: true);
+      setState(() {
+        _isUploadingImage = false;
+      });
+    }
+  }
+
+  Future<void> _takePhotoAndUpload() async {
+    try {
+      setState(() {
+        _isUploadingImage = true;
+      });
+
+      // Take photo with camera
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 80,
+      );
+
+      if (image == null) {
+        setState(() {
+          _isUploadingImage = false;
+        });
+        _showSnackBar('No photo taken', isError: true);
+        print('No photo taken');
+        return;
+      }
+
+      // Show the image immediately
+      setState(() {
+        _profileImageUrl = image.path;
+      });
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        _showSnackBar('User not authenticated', isError: true);
+        setState(() {
+          _isUploadingImage = false;
+        });
+        print('User not authenticated');
+        return;
+      }
+
+      // Convert image to base64 for storage in Firestore
+      final File imageFile = File(image.path);
+      final List<int> imageBytes = await imageFile.readAsBytes();
+      final String base64Image = base64Encode(imageBytes);
+
+      print('Photo size: ${imageBytes.length} bytes');
+      print('Base64 size: ${base64Image.length} characters');
+
+      // Check if image is too large for Firestore (1MB limit)
+      if (base64Image.length > 1000000) {
+        _showSnackBar('Photo too large. Please take a smaller photo.', isError: true);
+        setState(() {
+          _isUploadingImage = false;
+        });
+        return;
+      }
+
+      // Update Firestore with the base64 image data
+      try {
+        await FirebaseFirestore.instance
+            .collection('userprofile')
+            .doc(user.uid)
+            .update({
+          'profileImageBase64': base64Image,
+          'profileImage': null, // Clear any previous URL
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        print('Firestore updated with base64 photo data');
+      } catch (e) {
+        print('Error updating Firestore: $e');
+        _showSnackBar('Error updating Firestore: $e', isError: true);
+        setState(() {
+          _isUploadingImage = false;
+        });
+        return;
+      }
+
+      // Update local state to show the image
+      setState(() {
+        _profileImageUrl = image.path; // Keep local file path for display
+        _isUploadingImage = false;
+      });
+
+      _showSnackBar('Profile photo updated successfully!');
+    } catch (e) {
+      print('Error uploading photo: $e');
+      _showSnackBar('Error uploading photo: ${e.toString()}', isError: true);
+      setState(() {
+        _isUploadingImage = false;
+      });
+    }
+  }
+
+  Future<void> _showImagePickerDialog() async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Update Profile Image'),
+          content: const Text('Choose how you want to update your profile image'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _pickAndUploadImage();
+              },
+              child: const Text('Choose from Gallery'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _takePhotoAndUpload();
+              },
+              child: const Text('Take Photo'),
+            ),
+            if (_profileImageUrl != null)
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _removeProfileImage();
+                },
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Remove Image'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _removeProfileImage() async {
+    try {
+      setState(() {
+        _isUploadingImage = true;
+      });
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        _showSnackBar('User not authenticated', isError: true);
+        setState(() {
+          _isUploadingImage = false;
+        });
+        return;
+      }
+
+      // Update Firestore to remove image data
+      await FirebaseFirestore.instance
+          .collection('userprofile')
+          .doc(user.uid)
+          .update({
+        'profileImage': null,
+        'profileImageBase64': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Update local state
+      setState(() {
+        _profileImageUrl = null;
+        _isUploadingImage = false;
+      });
+
+      _showSnackBar('Profile image removed successfully!');
+    } catch (e) {
+      print('Error removing image: $e');
+      _showSnackBar('Error removing image: ${e.toString()}', isError: true);
+      setState(() {
+        _isUploadingImage = false;
+      });
+    }
   }
 
   Future<void> _logout() async {
@@ -320,10 +636,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
     try {
       print('Logging out user...');
-      
+
       // Sign out from Firebase Auth
       await FirebaseAuth.instance.signOut();
-      
+
       print('User logged out successfully');
 
       if (mounted) {
@@ -331,7 +647,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const AuthGate()),
-          (route) => false,
+              (route) => false,
         );
       }
     } catch (e) {
@@ -371,7 +687,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     try {
       await CaregiverServices.removeCaregiverConnection();
       _showSnackBar('Caregiver connection removed successfully');
-      
+
       // Reload user data to get updated caregiver info
       await _loadUserData();
     } catch (e) {
@@ -410,264 +726,290 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF2561FA)))
           : SingleChildScrollView(
-              child: Column(
-                children: [
-                  // Blue header section
-                  Container(
-                    height: 320,
-                    width: double.infinity,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF2561FA),
-                      borderRadius: BorderRadius.only(
-                        bottomLeft: Radius.circular(40),
-                        bottomRight: Radius.circular(40),
-                      ),
-                    ),
-                    child: SafeArea(
-                      child: Column(
+        child: Column(
+          children: [
+            // Blue header section
+            Container(
+              height: 320,
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                color: Color(0xFF2561FA),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(40),
+                  bottomRight: Radius.circular(40),
+                ),
+              ),
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    // Back button and title
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      child: Row(
                         children: [
-                          // Back button and title
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                            child: Row(
-                              children: [
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: IconButton(
-                                    icon: const Icon(Icons.arrow_back, color: Colors.white, size: 24),
-                                    onPressed: () => Navigator.pop(context),
-                                  ),
-                                ),
-                                const Expanded(
-                                  child: Center(
-                                    child: Text(
-                                      'Your Profile',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 26,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 1.2,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: IconButton(
-                                    icon: _isLoading 
-                                        ? const SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(
-                                              color: Colors.white,
-                                              strokeWidth: 2,
-                                            ),
-                                          )
-                                        : const Icon(Icons.refresh, color: Colors.white, size: 24),
-                                    onPressed: _isLoading ? null : _loadUserData,
-                                  ),
-                                ),
-                              ],
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(Icons.arrow_back, color: Colors.white, size: 24),
+                              onPressed: () => Navigator.pop(context),
                             ),
                           ),
-                          const SizedBox(height: 30),
-                          // Profile image
-                          Stack(
-                            children: [
-                              Container(
-                                width: 160,
-                                height: 160,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
+                          const Expanded(
+                            child: Center(
+                              child: Text(
+                                'Your Profile',
+                                style: TextStyle(
                                   color: Colors.white,
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: IconButton(
+                              icon: _isLoading
+                                  ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                                  : const Icon(Icons.refresh, color: Colors.white, size: 24),
+                              onPressed: _isLoading ? null : _loadUserData,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                    // Profile image
+                    GestureDetector(
+                      onTap: _isEditing ? _showImagePickerDialog : null,
+                      behavior: HitTestBehavior.translucent,
+                      child: Stack(
+                        children: [
+                          Container(
+                            width: 160,
+                            height: 160,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.2),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 10),
+                                ),
+                              ],
+                              border: Border.all(color: Colors.white, width: 5),
+                              image: _profileImageUrl != null
+                                  ? DecorationImage(
+                                image: _profileImageUrl!.startsWith('data:')
+                                    ? MemoryImage(base64Decode(_profileImageUrl!.split(',')[1]))
+                                    : _profileImageUrl!.startsWith('http')
+                                    ? NetworkImage(_profileImageUrl!)
+                                    : FileImage(File(_profileImageUrl!)) as ImageProvider,
+                                fit: BoxFit.cover,
+                              )
+                                  : null,
+                            ),
+                            child: _profileImageUrl == null
+                                ? const Icon(Icons.person, size: 100, color: Color(0xFF2561FA))
+                                : null,
+                          ),
+                          if (_isEditing)
+                            Positioned(
+                              right: 10,
+                              bottom: 10,
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
                                       color: Colors.black.withOpacity(0.2),
-                                      blurRadius: 20,
-                                      offset: const Offset(0, 10),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
                                     ),
                                   ],
-                                  border: Border.all(color: Colors.white, width: 5),
-                                  image: _profileImageUrl != null
-                                    ? DecorationImage(
-                                        image: NetworkImage(_profileImageUrl!),
-                                        fit: BoxFit.cover,
-                                      )
-                                    : null,
                                 ),
-                                child: _profileImageUrl == null
-                                    ? const Icon(Icons.person, size: 100, color: Color(0xFF2561FA))
-                                    : null,
-                              ),
-                              if (_isEditing)
-                                Positioned(
-                                  right: 10,
-                                  bottom: 10,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: const BoxDecoration(
-                                      color: Colors.white,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      Icons.camera_alt,
-                                      color: Colors.grey[800],
-                                      size: 24,
-                                    ),
+                                child: _isUploadingImage
+                                    ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2561FA)),
                                   ),
+                                )
+                                    : Icon(
+                                  Icons.camera_alt,
+                                  color: Colors.grey[800],
+                                  size: 24,
                                 ),
-                            ],
-                          ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
+                  ],
+                ),
+              ),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 24),
+              child: Column(
+                children: [
+                  _buildProfileField(
+                    label: 'User Name',
+                    controller: _usernameController,
+                    enabled: _isEditing,
+                    icon: Icons.person_outline,
                   ),
-                  
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 24),
-                    child: Column(
-                      children: [
-                        _buildProfileField(
-                          label: 'User Name',
-                          controller: _usernameController,
-                          enabled: _isEditing,
-                          icon: Icons.person_outline,
+                  const SizedBox(height: 24),
+
+                  _buildProfileField(
+                    label: 'Email',
+                    controller: _emailController,
+                    enabled: false, // Email cannot be modified
+                    icon: Icons.email_outlined,
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  const SizedBox(height: 24),
+
+                  if (_isEditing)
+                    _buildProfileField(
+                      label: 'Password',
+                      controller: _passwordController,
+                      enabled: true,
+                      isPassword: true,
+                      icon: Icons.lock_outline,
+                      hintText: 'Leave blank to keep current password',
+                    ),
+
+                  if (_isEditing)
+                    const SizedBox(height: 24),
+
+                  _buildProfileField(
+                    label: 'Phone Number',
+                    controller: _phoneController,
+                    enabled: _isEditing,
+                    icon: Icons.phone_outlined,
+                    keyboardType: TextInputType.phone,
+                    hintText: '0121234567',
+                  ),
+                  const SizedBox(height: 24),
+
+                  _buildProfileField(
+                    label: 'Family / Caregiver Contact',
+                    controller: _emergencyContactController,
+                    enabled: _isEditing,
+                    icon: Icons.contact_phone_outlined,
+                    keyboardType: TextInputType.phone,
+                    hintText: '0121234567',
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Caregiver Management Section (only for blind users)
+                  if (_userType == 'blind_user') ...[
+                    _buildCaregiverSection(),
+                    const SizedBox(height: 32),
+                  ],
+
+                  // Edit/Save Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 60,
+                    child: ElevatedButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                        if (_isEditing) {
+                          _saveProfile();
+                        } else {
+                          setState(() {
+                            _isEditing = true;
+                          });
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2561FA),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        const SizedBox(height: 24),
-                        
-                        _buildProfileField(
-                          label: 'Email',
-                          controller: _emailController,
-                          enabled: _isEditing,
-                          icon: Icons.email_outlined,
-                          keyboardType: TextInputType.emailAddress,
+                        elevation: 5,
+                        shadowColor: const Color(0xFF2561FA).withOpacity(0.5),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
                         ),
-                        const SizedBox(height: 24),
-                        
-                        if (_isEditing)
-                          _buildProfileField(
-                            label: 'Password',
-                            controller: _passwordController,
-                            enabled: true,
-                            isPassword: true,
-                            icon: Icons.lock_outline,
-                            hintText: 'Enter new password (leave blank to keep current)',
-                          ),
-                          
-                        if (_isEditing)
-                          const SizedBox(height: 24),
-                          
-                        _buildProfileField(
-                          label: 'Phone Number',
-                          controller: _phoneController,
-                          enabled: _isEditing,
-                          icon: Icons.phone_outlined,
-                          keyboardType: TextInputType.phone,
+                      )
+                          : Text(
+                        _isEditing ? 'Save Changes' : 'Edit Profile',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.0,
                         ),
-                        const SizedBox(height: 24),
-                        
-                        _buildProfileField(
-                          label: 'Family / Caregiver Contact',
-                          controller: _emergencyContactController,
-                          enabled: _isEditing,
-                          icon: Icons.contact_phone_outlined,
-                          keyboardType: TextInputType.phone,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Log Out Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 60,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _logout,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        const SizedBox(height: 32),
-                        
-                        // Caregiver Management Section (only for blind users)
-                        if (_userType == 'blind_user') ...[
-                          _buildCaregiverSection(),
-                          const SizedBox(height: 32),
-                        ],
-                        
-                        // Edit/Save Button
-                        SizedBox(
-                          width: double.infinity,
-                          height: 60,
-                          child: ElevatedButton(
-                            onPressed: _isLoading
-                                ? null
-                                : () {
-                                    if (_isEditing) {
-                                      _saveProfile();
-                                    } else {
-                                      setState(() {
-                                        _isEditing = true;
-                                      });
-                                    }
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2561FA),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              elevation: 5,
-                              shadowColor: const Color(0xFF2561FA).withOpacity(0.5),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            child: _isLoading
-                                ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : Text(
-                                    _isEditing ? 'Save Changes' : 'Edit Profile',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: 1.0,
-                                    ),
-                                  ),
-                          ),
+                        elevation: 5,
+                        shadowColor: Colors.red.withOpacity(0.5),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: const Text(
+                        'Log Out',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.0,
                         ),
-                        const SizedBox(height: 16),
-                        // Log Out Button
-                        SizedBox(
-                          width: double.infinity,
-                          height: 60,
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _logout,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              elevation: 5,
-                              shadowColor: Colors.red.withOpacity(0.5),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            child: const Text(
-                              'Log Out',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 1.0,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
+          ],
+        ),
+      ),
     );
   }
-  
+
   Widget _buildCaregiverSection() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -691,19 +1033,23 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   color: Colors.blue.shade700,
                 ),
               ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: _viewConnectionRequests,
-                icon: Icon(Icons.people, color: Colors.blue.shade700, size: 20),
-                label: const Text('View Requests'),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.blue.shade700,
-                ),
-              ),
             ],
           ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _viewConnectionRequests,
+              icon: Icon(Icons.people, color: Colors.blue.shade700, size: 20),
+              label: const Text('View Requests'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.blue.shade700,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
-          
+
           if (_caregiverEmail != null) ...[
             // Current caregiver display
             Container(
@@ -792,7 +1138,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Email input field
                   TextField(
                     controller: _caregiverEmailController,
@@ -815,21 +1161,21 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     keyboardType: TextInputType.emailAddress,
                   ),
                   const SizedBox(height: 16),
-                  
+
                   SizedBox(
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton.icon(
                       onPressed: _isLoading ? null : _addCaregiver,
-                      icon: _isLoading 
+                      icon: _isLoading
                           ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
                           : const Icon(Icons.person_add, color: Colors.white),
                       label: Text(
                         _isLoading ? 'Connecting...' : 'Add Caregiver',
@@ -850,7 +1196,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               ),
             ),
           ],
-          
+
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(12),
@@ -878,7 +1224,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       ),
     );
   }
-  
+
   Widget _buildProfileField({
     required String label,
     required TextEditingController controller,
@@ -928,6 +1274,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             ),
             decoration: InputDecoration(
               hintText: hintText,
+              hintStyle: TextStyle(
+                color: Colors.grey.shade400,
+                fontSize: 16,
+              ),
               prefixIcon: Icon(
                 icon,
                 color: enabled ? const Color(0xFF2561FA) : Colors.grey,

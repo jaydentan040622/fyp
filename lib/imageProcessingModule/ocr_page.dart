@@ -46,9 +46,6 @@ class _OCRPageState extends State<OCRPage> {
   }
 
   Future<void> _speakGuide() async {
-    // Wait for navigation announcement to complete before stopping announcements
-    await Future.delayed(const Duration(seconds: 3));
-
     await _aggressiveStopAnnouncements();
     await Future.delayed(const Duration(milliseconds: 500)); // Wait for previous speech to stop
     await _flutterTts.speak(
@@ -191,7 +188,7 @@ class _OCRPageState extends State<OCRPage> {
               await _flutterTts.stop();
               await Future.delayed(const Duration(milliseconds: 200));
               await _flutterTts.speak("Going to main menu");
-              await Future.delayed(const Duration(milliseconds: 2500));
+              await Future.delayed(const Duration(milliseconds: 1500));
               await Vibration.vibrate(duration: 100);
               Navigator.pushAndRemoveUntil(
                 context,
@@ -387,7 +384,7 @@ class _OCRResultPageState extends State<OCRResultPage> {
       // 1. Speak the success message and wait for it to finish
       await _aggressiveStopAnnouncements();
       await _flutterTts.speak("Text extracted successfully. Reading the recognized text.");
-      await Future.delayed(const Duration(milliseconds: 5000)); // Small buffer
+      await Future.delayed(const Duration(milliseconds: 5000));
 
       // 2. Now read the extracted text
       await _aggressiveStopAnnouncements();
@@ -451,19 +448,15 @@ class _OCRResultPageState extends State<OCRResultPage> {
     return Scaffold(
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onVerticalDragEnd: (details) async {
-          if (details.primaryVelocity != null) {
-            if (details.primaryVelocity! < 0) {
-              // Swipe up - read extracted text
-              if (widget.extractedText.isNotEmpty) {
-                await _aggressiveStopAnnouncements();
-                await _flutterTts.speak("Reading extracted text again");
-                await _readExtractedText();
-              } else {
-                await _aggressiveStopAnnouncements();
-                await _flutterTts.speak("No text to read");
-              }
-            }
+        onLongPress: () async {
+          // Long press - read extracted text
+          if (widget.extractedText.isNotEmpty) {
+            await _aggressiveStopAnnouncements();
+            await _flutterTts.speak("Reading extracted text again");
+            await _readExtractedText();
+          } else {
+            await _aggressiveStopAnnouncements();
+            await _flutterTts.speak("No text to read");
           }
         },
         onHorizontalDragEnd: (details) async {

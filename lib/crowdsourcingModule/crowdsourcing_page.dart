@@ -118,8 +118,9 @@ class _CrowdsourcingPageState extends State<CrowdsourcingPage> {
     });
   }
 
-  void _navigateToVoiceNote() {
+  Future<void> _navigateToVoiceNote() async {
     _gestureService.speak('Opening Voice Note');
+    await Future.delayed(const Duration(milliseconds: 2000));
     _pauseAnnouncements();
     // Force stop all announcements to ensure clean transition
     _gestureService.stopAllAnnouncements();

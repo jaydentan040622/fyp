@@ -133,8 +133,9 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
     });
   }
 
-  void _navigateToOCR() {
+  Future<void> _navigateToOCR() async {
     _gestureService.speak('Opening OCR Text Recognition');
+    await Future.delayed(const Duration(milliseconds: 2500));
     _pauseAnnouncements();
     // Force stop all announcements to ensure clean transition
     _gestureService.stopAllAnnouncements();
