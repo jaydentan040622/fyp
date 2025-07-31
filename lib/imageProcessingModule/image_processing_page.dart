@@ -58,6 +58,9 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
         _handleGesture(gesture);
       });
 
+      // Suppress default gesture announcements since we have custom ones
+      _gestureService.setSuppressGestureAnnouncements(true);
+
       setState(() {
         _isInitialized = true;
       });
@@ -171,6 +174,13 @@ class _ImageProcessingPageState extends State<ImageProcessingPage> with WidgetsB
     if (mounted && _isInitialized && ModalRoute.of(context)?.isCurrent == true) {
       // Only resume if this page is the top of the stack
       _startPageAnnouncements();
+      // Always set gesture callback when returning to this page
+      debugPrint('Image Processing page: Setting gesture callback');
+      _gestureService.setGestureCallback((GestureType gesture) {
+        _handleGesture(gesture);
+      });
+      // Ensure gesture announcements are suppressed for this page
+      _gestureService.setSuppressGestureAnnouncements(true);
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted && ModalRoute.of(context)?.isCurrent == true) {
           _gestureService.speak('Returned to Image Processing page.');

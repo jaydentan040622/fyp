@@ -47,6 +47,9 @@ class GestureRecognitionService {
   Function(GestureType)? _onGestureDetected;
   Function(String)? _onDebugMessage;
 
+  // Flag to suppress default gesture announcements
+  bool _suppressGestureAnnouncements = false;
+
   // Initialize the service
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -66,8 +69,25 @@ class GestureRecognitionService {
   }
 
   // Set gesture detection callback
-  void setGestureCallback(Function(GestureType) callback) {
+  void setGestureCallback(Function(GestureType)? callback) {
     _onGestureDetected = callback;
+  }
+
+  // Clear gesture detection callback
+  void clearGestureCallback() {
+    _onGestureDetected = null;
+    _isRecording = false;
+    _gesturePoints.clear();
+  }
+
+  // Check if gesture callback is set
+  bool hasGestureCallback() {
+    return _onGestureDetected != null;
+  }
+
+  // Set whether to suppress default gesture announcements
+  void setSuppressGestureAnnouncements(bool suppress) {
+    _suppressGestureAnnouncements = suppress;
   }
 
   // Set debug message callback
@@ -104,8 +124,16 @@ class GestureRecognitionService {
 
     if (detectedGesture != GestureType.unknown) {
       _triggerHapticFeedback(detectedGesture);
-      _announceGesture(detectedGesture);
-      _onGestureDetected?.call(detectedGesture);
+      // Call the callback first, then announce (if not suppressed)
+      _debugPrint('Calling gesture callback for: $detectedGesture');
+      if (_onGestureDetected != null) {
+        _onGestureDetected!.call(detectedGesture);
+      } else {
+        _debugPrint('No gesture callback set!');
+      }
+      if (!_suppressGestureAnnouncements) {
+        _announceGesture(detectedGesture);
+      }
     }
 
     _gesturePoints.clear();
@@ -127,7 +155,7 @@ class GestureRecognitionService {
     // Check for downward line
     GestureType lineResult = _detectDownwardLine();
     if (lineResult != GestureType.unknown) return lineResult;
-    
+
     // Check for circle gesture
     GestureType circleResult = _detectCircle();
     if (circleResult != GestureType.unknown) return circleResult;
@@ -195,7 +223,7 @@ class GestureRecognitionService {
   GestureType _detectCircle() {
     // Need at least a certain number of points for a meaningful circle
     if (_gesturePoints.length < 10) return GestureType.unknown;
-    
+
     // Calculate center of mass of all points
     double sumX = 0;
     double sumY = 0;
@@ -205,38 +233,38 @@ class GestureRecognitionService {
     }
     double centerX = sumX / _gesturePoints.length;
     double centerY = sumY / _gesturePoints.length;
-    
+
     // Calculate average distance from center (expected radius)
     double totalRadius = 0;
     for (var point in _gesturePoints) {
       totalRadius += _distance(point.x, point.y, centerX, centerY);
     }
     double avgRadius = totalRadius / _gesturePoints.length;
-    
+
     // Check if all points are roughly the same distance from the center (within tolerance)
     const radiusTolerance = 0.5; // 50% tolerance
     int pointsWithinTolerance = 0;
-    
+
     for (var point in _gesturePoints) {
       double pointRadius = _distance(point.x, point.y, centerX, centerY);
       double relativeDifference = (pointRadius - avgRadius).abs() / avgRadius;
-      
+
       if (relativeDifference < radiusTolerance) {
         pointsWithinTolerance++;
       }
     }
-    
+
     // Calculate angle coverage to ensure we have something close to a full circle
     double angleStart = 0;
     double angleEnd = 0;
     bool angleInitialized = false;
-    
+
     // Track minimum and maximum angles to check if we've covered a good portion of a circle
     for (var point in _gesturePoints) {
       double dx = point.x - centerX;
       double dy = point.y - centerY;
       double angle = (atan2(dy, dx) * 180 / pi + 360) % 360; // 0-360 range
-      
+
       if (!angleInitialized) {
         angleStart = angle;
         angleEnd = angle;
@@ -250,21 +278,21 @@ class GestureRecognitionService {
         }
       }
     }
-    
+
     double angleCoverage = (angleEnd - angleStart + 360) % 360;
-    
+
     // Points within tolerance threshold and minimum angle coverage required for circle detection
     double pointsRatio = pointsWithinTolerance / _gesturePoints.length;
     const minAngleCoverage = 270.0; // At least 3/4 of a circle
     const minPointsRatio = 0.7;   // At least 70% of points should be on the circle path
-    
+
     if (pointsRatio >= minPointsRatio && angleCoverage >= minAngleCoverage) {
       return GestureType.circleGesture;
     }
-    
+
     return GestureType.unknown;
   }
-  
+
   // Helper method to calculate distance between two points
   double _distance(double x1, double y1, double x2, double y2) {
     return sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2));
@@ -332,7 +360,7 @@ class GestureRecognitionService {
     if (_currentActivePageId == pageId) {
       _currentActivePageId = null;
       _isAnnouncementActive = false;
-      
+
       // Also stop any ongoing speech
       if (_isSpeaking) {
         _flutterTts.stop();
@@ -355,30 +383,30 @@ class GestureRecognitionService {
   // Speak text
   Future<void> speak(String text, {String? pageId}) async {
     if (!_isInitialized) return;
-    
+
     // Check if this page can speak
     if (pageId != null && !canMakeAnnouncements(pageId)) {
       _debugPrint('Speech blocked: another page ($_currentActivePageId) is active');
       return;
     }
-    
+
     // If there's an ongoing announcement, wait for it to finish or stop it
     if (_isSpeaking) {
       await _flutterTts.stop();
       await Future.delayed(const Duration(milliseconds: 100));
     }
-    
+
     try {
       // Update state before speaking
       if (pageId != null) {
         _currentActivePageId = pageId;
         _isAnnouncementActive = true;
       }
-      
+
       _isSpeaking = true;
       _debugPrint('Speaking: $text');
       await _flutterTts.speak(text);
-      
+
       // Note: we don't set _isSpeaking = false here because we now have a completion handler
     } catch (e) {
       _isSpeaking = false;
@@ -393,12 +421,12 @@ class GestureRecognitionService {
       _debugPrint('Page announcement blocked: another page is active');
       return; // Another page is making announcements
     }
-    
+
     // Ensure we set this page as the active announcement source
     if (pageId != null) {
       setActiveAnnouncementSource(pageId);
     }
-    
+
     await speak('Current page: $pageName', pageId: pageId);
   }
 
