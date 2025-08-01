@@ -95,186 +95,188 @@ class _TransportationPageState extends State<TransportationPage> with RouteAware
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: [
-          // Blue header
-          Container(
-            width: double.infinity,
-            height: 120,
-            color: const Color(0xFF2561FA),
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
-                      onPressed: () async {
-                        await flutterTts.stop();
-                        await flutterTts.speak("Going back");
-                        await Future.delayed(const Duration(milliseconds: 2000));
-                        await Vibration.vibrate(duration: 100);
-                        Navigator.pop(context);
-                      },
-                    ),
-                    const Expanded(
-                      child: Text(
-                        'Optichat',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
+      body: GestureDetector(
+        onHorizontalDragEnd: (details) async {
+          if (details.primaryVelocity != null) {
+            if (details.primaryVelocity! < 0) {
+              // Swipe left (right-to-left): go back
+              await flutterTts.stop();
+              await Future.delayed(const Duration(milliseconds: 200));
+              await flutterTts.speak("Going back");
+              await Future.delayed(const Duration(milliseconds: 1500));
+              await Vibration.vibrate(duration: 100);
+              Navigator.pop(context);
+            } else if (details.primaryVelocity! > 0) {
+              // Swipe right (left-to-right): go to main menu
+              await flutterTts.stop();
+              await Future.delayed(const Duration(milliseconds: 200));
+              await flutterTts.speak("Going to main menu");
+              await Future.delayed(const Duration(milliseconds: 2500));
+              await Vibration.vibrate(duration: 100);
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => HomeScreen()),
+                    (route) => false,
+              );
+            }
+          }
+        },
+        child: Column(
+          children: [
+            // Blue header
+            Container(
+              width: double.infinity,
+              height: 120,
+              color: const Color(0xFF2561FA),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () async {
+                          await flutterTts.stop();
+                          await flutterTts.speak("Going back");
+                          await Future.delayed(const Duration(milliseconds: 2000));
+                          await Vibration.vibrate(duration: 100);
+                          Navigator.pop(context);
+                        },
+                      ),
+                      const Expanded(
+                        child: Text(
+                          'Optichat',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        _isSpeaking ? Icons.volume_off : Icons.volume_up,
-                        color: Colors.white,
+                      IconButton(
+                        icon: Icon(
+                          _isSpeaking ? Icons.volume_off : Icons.volume_up,
+                          color: Colors.white,
+                        ),
+                        onPressed: _isSpeaking ? null : _speakGuide,
                       ),
-                      onPressed: _isSpeaking ? null : _speakGuide,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          // Main content
-          Expanded(
-            child: Container(
-              color: const Color(0xFFF0F4F8), // Light blue-grey background
-              child: Center(
-                child: Container(
-                  width: 500,
-                  padding: const EdgeInsets.all(16.0),
-                  child: GestureDetector(
-                    onVerticalDragEnd: _handleVerticalSwipe,
-                    onHorizontalDragEnd: (details) async {
-                      if (details.primaryVelocity != null) {
-                        if (details.primaryVelocity! < 0) {
-                          // Swipe left (right-to-left): go back
-                          await flutterTts.stop();
-                          await Future.delayed(const Duration(milliseconds: 200));
-                          await flutterTts.speak("Going back");
-                          await Future.delayed(const Duration(milliseconds: 1500));
-                          await Vibration.vibrate(duration: 100);
-                          Navigator.pop(context);
-                        } else if (details.primaryVelocity! > 0) {
-                          // Swipe right (left-to-right): go to main menu
-                          await flutterTts.stop();
-                          await Future.delayed(const Duration(milliseconds: 200));
-                          await flutterTts.speak("Going to main menu");
-                          await Future.delayed(const Duration(milliseconds: 2500));
-                          await Vibration.vibrate(duration: 100);
-                          Navigator.pushAndRemoveUntil(
-                            context,
-                            MaterialPageRoute(builder: (context) => HomeScreen()),
-                                (route) => false,
-                          );
-                        }
-                      }
-                    },
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () async {
-                              await flutterTts.stop();
-                              await Vibration.vibrate(duration: 100);
-                              Navigator.push(context, MaterialPageRoute(builder: (context) => SearchDestination()));
-                            },
-                            child: SizedBox(
-                              width: 280,
-                              child: Card(
-                                elevation: 4,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    color: Colors.blue.shade50,
-                                  ),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.search,
-                                        size: 80,
-                                        color: Colors.blue.shade700,
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                                        child: Text(
-                                          'Search for Destination',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontSize: 24,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.blue.shade700,
+            // Main content
+            Expanded(
+              child: Container(
+                color: const Color(0xFFF0F4F8), // Light blue-grey background
+                child: Center(
+                  child: Container(
+                    width: 500,
+                    padding: const EdgeInsets.all(16.0),
+                    child: GestureDetector(
+                      onVerticalDragEnd: _handleVerticalSwipe,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () async {
+                                await flutterTts.stop();
+                                await Vibration.vibrate(duration: 100);
+                                Navigator.push(context, MaterialPageRoute(builder: (context) => SearchDestination()));
+                              },
+                              child: SizedBox(
+                                width: 280,
+                                child: Card(
+                                  elevation: 4,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      color: Colors.blue.shade50,
+                                    ),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.search,
+                                          size: 80,
+                                          color: Colors.blue.shade700,
+                                        ),
+                                        const SizedBox(height: 16),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                                          child: Text(
+                                            'Search for Destination',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize: 24,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.blue.shade700,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () async {
-                              await flutterTts.stop();
-                              await Vibration.vibrate(duration: 100);
-                              Navigator.push(context, MaterialPageRoute(builder: (context) => TransportSchedule()));
-                            },
-                            child: SizedBox(
-                              width: 280,
-                              child: Card(
-                                elevation: 4,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    color: Colors.blue.shade50,
-                                  ),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.directions_bus,
-                                        size: 80,
-                                        color: Colors.blue.shade700,
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                                        child: Text(
-                                          'Public Transport Schedule',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontSize: 24,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.blue.shade700,
+                          const SizedBox(height: 16),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () async {
+                                await flutterTts.stop();
+                                await Vibration.vibrate(duration: 100);
+                                Navigator.push(context, MaterialPageRoute(builder: (context) => TransportSchedule()));
+                              },
+                              child: SizedBox(
+                                width: 280,
+                                child: Card(
+                                  elevation: 4,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      color: Colors.blue.shade50,
+                                    ),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.directions_bus,
+                                          size: 80,
+                                          color: Colors.blue.shade700,
+                                        ),
+                                        const SizedBox(height: 16),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                                          child: Text(
+                                            'Public Transport Schedule',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize: 24,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.blue.shade700,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
