@@ -589,7 +589,12 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
               IconButton(
                 icon: const Icon(Icons.library_music),
                 tooltip: 'Saved Audio',
-                onPressed: () {
+                onPressed: () async {
+                  await flutterTts.stop();
+                  await Future.delayed(const Duration(milliseconds: 200));
+                  await flutterTts.speak("Opening saved audio page");
+                  await Future.delayed(const Duration(milliseconds: 2000));
+                  await Vibration.vibrate(duration: 100);
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => const SavedAudioPage()),
@@ -614,6 +619,11 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
                 } else if (details.primaryVelocity! > 0) {
                   // Swipe down
                   if (!_isRecording) {
+                    await flutterTts.stop();
+                    await Future.delayed(const Duration(milliseconds: 200));
+                    await flutterTts.speak("Opening saved audio page");
+                    await Future.delayed(const Duration(milliseconds: 2000));
+                    await Vibration.vibrate(duration: 100);
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (context) => const SavedAudioPage()),

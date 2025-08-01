@@ -149,6 +149,17 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
     await flutterTts.speak(completeMessage.toString());
   }
 
+  Future<void> _speakEmptyStateWelcome() async {
+    if (!mounted) return;
+    await flutterTts.stop();
+    if (!mounted) return;
+
+    await Future.delayed(const Duration(milliseconds: 300));
+    await flutterTts.speak(
+        "Welcome to the saved audio page. You have no saved audio files. To add audio files, go to the voice note page and record new audio. Swipe left to go back. Swipe right to go to the main menu."
+    );
+  }
+
   Future<void> _initializeSpeech() async {
     print('Initializing speech recognition...');
     setState(() {
@@ -589,6 +600,41 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
       ),
       body: Stack(
         children: [
+          GestureDetector(
+            onHorizontalDragEnd: (details) async {
+              if (details.primaryVelocity != null) {
+                if (details.primaryVelocity! < 0) {
+                  // Swipe left (right-to-left): go back
+                  await flutterTts.stop();
+                  await Future.delayed(const Duration(milliseconds: 200));
+                  await flutterTts.speak("Going back");
+                  await Future.delayed(const Duration(milliseconds: 1500));
+                  await Vibration.vibrate(duration: 100);
+                  Navigator.pop(context);
+                } else if (details.primaryVelocity! > 0) {
+                  // Swipe right (left-to-right): go to main menu
+                  await flutterTts.stop();
+                  await Future.delayed(const Duration(milliseconds: 200));
+                  await flutterTts.speak("Going to main menu");
+                  await Future.delayed(const Duration(milliseconds: 2500));
+                  await Vibration.vibrate(duration: 100);
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (context) => HomeScreen()),
+                        (route) => false,
+                  );
+                }
+              }
+            },
+            onLongPress: () async {
+              await _handleVoiceCommand();
+            },
+            child: Container(
+              width: double.infinity,
+              height: double.infinity,
+              color: Colors.transparent,
+            ),
+          ),
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('voice_notes')
@@ -600,7 +646,18 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
                 return const Center(child: CircularProgressIndicator());
               }
               if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                return const Center(child: Text('No saved audio found.'));
+                // Speak welcome message for empty state
+                if (!_hasSpokenWelcome) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _speakEmptyStateWelcome();
+                    _hasSpokenWelcome = true;
+                  });
+                }
+                return Container(
+                  width: double.infinity,
+                  height: double.infinity,
+                  child: const Center(child: Text('No saved audio found.')),
+                );
               }
               final docs = snapshot.data!.docs;
               _fileNames = docs.map<String>((doc) {
@@ -619,111 +676,67 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
                   _hasSpokenWelcome = true;
                 });
               }
-              return RawGestureDetector(
-                gestures: {
-                  HorizontalDragGestureRecognizer: GestureRecognizerFactoryWithHandlers<HorizontalDragGestureRecognizer>(
-                        () => HorizontalDragGestureRecognizer(),
-                        (HorizontalDragGestureRecognizer instance) {
-                      instance
-                        ..onEnd = (details) async {
-                          if (details.primaryVelocity != null) {
-                            if (details.primaryVelocity! < 0) {
-                              // Swipe left (right-to-left): go back
-                              await flutterTts.stop();
-                              await Future.delayed(const Duration(milliseconds: 200));
-                              await flutterTts.speak("Going back");
-                              await Future.delayed(const Duration(milliseconds: 1500));
-                              await Vibration.vibrate(duration: 100);
-                              Navigator.pop(context);
-                            } else if (details.primaryVelocity! > 0) {
-                              // Swipe right (left-to-right): go to main menu
-                              await flutterTts.stop();
-                              await Future.delayed(const Duration(milliseconds: 200));
-                              await flutterTts.speak("Going to main menu");
-                              await Future.delayed(const Duration(milliseconds: 2500));
-                              await Vibration.vibrate(duration: 100);
-                              Navigator.pushAndRemoveUntil(
-                                context,
-                                MaterialPageRoute(builder: (context) => HomeScreen()),
-                                    (route) => false,
-                              );
-                            }
-                          }
-                        };
-                    },
-                  ),
-                  LongPressGestureRecognizer: GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-                        () => LongPressGestureRecognizer(),
-                        (LongPressGestureRecognizer instance) {
-                      instance
-                        ..onLongPress = () async {
-                          await _handleVoiceCommand();
-                        };
-                    },
-                  ),
-                },
-                child: ListView.builder(
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final doc = docs[index];
-                    final data = doc.data() as Map<String, dynamic>;
-                    final fileName = data['file_name'] ?? data['file_path'] ??
-                        'Unknown';
-                    final transcript = data['transcript'] ?? '';
-                    final createdAt = (data['created_at'] as Timestamp?)?.toDate();
-                    return ExpansionTile(
-                      leading: const Icon(Icons.audiotrack, color: Color(0xFF2561FA)),
-                      title: Text(fileName),
-                      subtitle: createdAt != null
-                          ? Text('Created: ${createdAt.toLocal()}')
-                          : null,
-                      trailing: PopupMenuButton<String>(
-                        onSelected: (value) async {
-                          if (value == 'rename') {
-                            await _renameFile(context, doc.id, fileName);
-                          } else if (value == 'delete') {
-                            await _deleteFile(context, doc.id, fileName);
-                          }
-                        },
-                        itemBuilder: (context) =>
-                        [
-                          const PopupMenuItem(
-                            value: 'rename',
-                            child: Text('Rename'),
-                          ),
-                          const PopupMenuItem(
-                            value: 'delete',
-                            child: Text('Delete'),
-                          ),
-                        ],
-                      ),
-                      children: [
-                        if (transcript.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16.0, vertical: 8.0),
-                            child: Text(
-                              transcript,
-                              style: const TextStyle(fontSize: 16, color: Colors
-                                  .black87),
-                            ),
-                          ),
-                        if (transcript.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(
-                                horizontal: 16.0, vertical: 8.0),
-                            child: Text('No transcript available.'),
-                          ),
-                        if (data['audio_url'] != null)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16.0, vertical: 8.0),
-                            child: AudioPlayerWidget(audioUrl: data['audio_url']),
-                          ),
+              return ListView.builder(
+                itemCount: docs.length,
+                itemBuilder: (context, index) {
+                  final doc = docs[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final fileName = data['file_name'] ?? data['file_path'] ??
+                      'Unknown';
+                  final transcript = data['transcript'] ?? '';
+                  final createdAt = (data['created_at'] as Timestamp?)?.toDate();
+                  return ExpansionTile(
+                    leading: const Icon(Icons.audiotrack, color: Color(0xFF2561FA)),
+                    title: Text(fileName),
+                    subtitle: createdAt != null
+                        ? Text('Created: ${createdAt.toLocal()}')
+                        : null,
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (value) async {
+                        if (value == 'rename') {
+                          await _renameFile(context, doc.id, fileName);
+                        } else if (value == 'delete') {
+                          await _deleteFile(context, doc.id, fileName);
+                        }
+                      },
+                      itemBuilder: (context) =>
+                      [
+                        const PopupMenuItem(
+                          value: 'rename',
+                          child: Text('Rename'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Delete'),
+                        ),
                       ],
-                    );
-                  },
-                ),
+                    ),
+                    children: [
+                      if (transcript.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0, vertical: 8.0),
+                          child: Text(
+                            transcript,
+                            style: const TextStyle(fontSize: 16, color: Colors
+                                .black87),
+                          ),
+                        ),
+                      if (transcript.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 16.0, vertical: 8.0),
+                          child: Text('No transcript available.'),
+                        ),
+                      if (data['audio_url'] != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0, vertical: 8.0),
+                          child: AudioPlayerWidget(audioUrl: data['audio_url']),
+                        ),
+                    ],
+                  );
+                },
               );
             },
           ),
