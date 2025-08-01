@@ -11,7 +11,7 @@ class NavigationPage extends StatefulWidget {
   State<NavigationPage> createState() => _NavigationPageState();
 }
 
-class _NavigationPageState extends State<NavigationPage> {
+class _NavigationPageState extends State<NavigationPage> with WidgetsBindingObserver {
   final GestureRecognitionService _gestureService = GestureRecognitionService();
   Timer? _pageAnnouncementTimer;
   bool _gestureEnabled = true;
@@ -25,16 +25,28 @@ class _NavigationPageState extends State<NavigationPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeGestureService();
     _startPageAnnouncements();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pageAnnouncementTimer?.cancel();
     _gestureService.clearActiveAnnouncementSource('navigation_page');
     _gestureService.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed && mounted && _isInitialized) {
+      // When app resumes, restart announcements and reinitialize gesture service
+      debugPrint('App resumed - restarting Navigation announcements');
+      _resumeAnnouncements();
+    }
   }
 
   Future<void> _initializeGestureService() async {
@@ -45,6 +57,9 @@ class _NavigationPageState extends State<NavigationPage> {
       _gestureService.setGestureCallback((GestureType gesture) {
         _handleGesture(gesture);
       });
+
+      // Suppress default gesture announcements since we have custom ones
+      _gestureService.setSuppressGestureAnnouncements(true);
 
       setState(() {
         _isInitialized = true;
@@ -87,19 +102,27 @@ class _NavigationPageState extends State<NavigationPage> {
   }
 
   void _handleGesture(GestureType gesture) {
-    if (!_gestureEnabled) return;
+    debugPrint('Navigation page: Gesture detected: $gesture');
+    if (!_gestureEnabled) {
+      debugPrint('Navigation page: Gestures disabled, ignoring');
+      return;
+    }
 
     switch (gesture) {
       case GestureType.swipeUp:
+        debugPrint('Navigation page: Navigating to Live Location Tracking');
         _navigateToLiveLocationTracking();
         break;
       case GestureType.downwardLine:
+        debugPrint('Navigation page: Navigating to Transportation');
         _navigateToTransportation();
         break;
       case GestureType.swipeLeft:
+        debugPrint('Navigation page: Going back to main page');
         _goBackToMainPage();
         break;
       default:
+        debugPrint('Navigation page: Unknown gesture: $gesture');
         break;
     }
   }
@@ -148,6 +171,18 @@ class _NavigationPageState extends State<NavigationPage> {
   void _resumeAnnouncements() {
     if (mounted && _isInitialized) {
       _startPageAnnouncements();
+      // Always set gesture callback when returning to this page
+      debugPrint('Navigation page: Setting gesture callback');
+      _gestureService.setGestureCallback((GestureType gesture) {
+        _handleGesture(gesture);
+      });
+      // Ensure gesture announcements are suppressed for this page
+      _gestureService.setSuppressGestureAnnouncements(true);
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+          _gestureService.speak('Returned to Navigation page.');
+        }
+      });
     }
   }
 
