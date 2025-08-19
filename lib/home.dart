@@ -308,12 +308,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
     if (!mounted || !_isActive) return;
 
     _pageAnnouncementTimer?.cancel();
-    _pageAnnouncementTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+    _pageAnnouncementTimer = Timer(const Duration(milliseconds: 800), () {
       if (mounted && _isInitialized && _isActive) {
-        _gestureService.speak('Current page: ${_pageNames[_currentPage]}');
+        int pageIndex = _currentPage;
+        if (_pageController.hasClients) {
+          final double? page = _pageController.page;
+          if (page != null) pageIndex = page.round();
+        }
+        _gestureService.speak('Current page: ${_pageNames[pageIndex]}');
       }
     });
-    debugPrint('HomeScreen: Page announcements started');
+    debugPrint('HomeScreen: One-shot page announcement scheduled');
   }
 
   void _pausePageAnnouncements() {
@@ -346,7 +351,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
   }
 
   void _nextPage() {
+    debugPrint('Current page is $_currentPage, total pages are $_totalPages');
     if (_currentPage < _totalPages - 1) {
+      debugPrint('HomeScreen: swipeRight - _currentPage=$_currentPage, animating to ${_currentPage + 1}');
       _pageController.animateToPage(
         _currentPage + 1,
         duration: const Duration(milliseconds: 300),
@@ -358,7 +365,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
   }
 
   void _previousPage() {
+    debugPrint('Current page is $_currentPage, total pages are $_totalPages');
     if (_currentPage > 0) {
+      debugPrint('HomeScreen: swipeLeft - _currentPage=$_currentPage, animating to ${_currentPage - 1}');
       _pageController.animateToPage(
         _currentPage - 1,
         duration: const Duration(milliseconds: 300),
@@ -383,12 +392,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
     });
   }
 
-  void _confirmPageSelection() {
-    _gestureService.speak('Confirming selection for ${_pageNames[_currentPage]}');
+  Future<void> _confirmPageSelection() async {
+    // Determine the most reliable, settled page index
+    int pageIndex = await _getSettledPageIndex();
+    // Keep state in sync if needed
+    if (pageIndex != _currentPage) {
+      setState(() {
+        _currentPage = pageIndex;
+      });
+    }
+
+    _gestureService.speak('Confirming selection for ${_pageNames[pageIndex]}');
     _pausePageAnnouncements();
 
     Widget targetPage;
-    switch (_currentPage) {
+    debugPrint('HomeScreen: Confirming selection for $pageIndex');
+    switch (pageIndex) {
       case 0:
         targetPage = const ImageProcessingPage();
         break;
@@ -409,6 +428,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
       // Reinitialize when returning
       _initializeSystem();
     });
+  }
+
+  Future<int> _getSettledPageIndex({Duration timeout = const Duration(milliseconds: 800)}) async {
+    if (!_pageController.hasClients) return _currentPage;
+    final Stopwatch sw = Stopwatch()..start();
+    while (true) {
+      bool isScrolling = false;
+      try {
+        isScrolling = _pageController.position.isScrollingNotifier.value;
+      } catch (_) {}
+      if (!isScrolling) break;
+      if (sw.elapsed >= timeout) break;
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    final double? page = _pageController.page;
+    if (page == null) return _currentPage;
+    return page.round();
   }
 
   @override
@@ -474,6 +510,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
                 child: PageView(
                   controller: _pageController,
                   onPageChanged: (index) {
+                    debugPrint('HomeScreen: onPageChanged -> $index');
                     setState(() {
                       _currentPage = index;
                     });
