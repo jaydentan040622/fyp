@@ -600,41 +600,6 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
       ),
       body: Stack(
         children: [
-          GestureDetector(
-            onHorizontalDragEnd: (details) async {
-              if (details.primaryVelocity != null) {
-                if (details.primaryVelocity! < 0) {
-                  // Swipe left (right-to-left): go back
-                  await flutterTts.stop();
-                  await Future.delayed(const Duration(milliseconds: 200));
-                  await flutterTts.speak("Going back");
-                  await Future.delayed(const Duration(milliseconds: 1500));
-                  await Vibration.vibrate(duration: 100);
-                  Navigator.pop(context);
-                } else if (details.primaryVelocity! > 0) {
-                  // Swipe right (left-to-right): go to main menu
-                  await flutterTts.stop();
-                  await Future.delayed(const Duration(milliseconds: 200));
-                  await flutterTts.speak("Going to main menu");
-                  await Future.delayed(const Duration(milliseconds: 2500));
-                  await Vibration.vibrate(duration: 100);
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (context) => HomeScreen()),
-                        (route) => false,
-                  );
-                }
-              }
-            },
-            onLongPress: () async {
-              await _handleVoiceCommand();
-            },
-            child: Container(
-              width: double.infinity,
-              height: double.infinity,
-              color: Colors.transparent,
-            ),
-          ),
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('voice_notes')
@@ -739,6 +704,36 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
                 },
               );
             },
+          ),
+          // Full-screen gesture overlay (on top of content, below listening indicator)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragEnd: (details) async {
+                if (details.primaryVelocity != null) {
+                  if (details.primaryVelocity! < 0) {
+                    // Swipe left (right-to-left): go back
+                    await flutterTts.stop();
+                    await Future.delayed(const Duration(milliseconds: 200));
+                    await flutterTts.speak("Going back");
+                    await Future.delayed(const Duration(milliseconds: 1500));
+                    await Vibration.vibrate(duration: 100);
+                    Navigator.pop(context);
+                  } else if (details.primaryVelocity! > 0) {
+                    // Swipe right (left-to-right): return to main menu (existing Home)
+                    await flutterTts.stop();
+                    await Future.delayed(const Duration(milliseconds: 200));
+                    await flutterTts.speak("Going to main menu");
+                    await Future.delayed(const Duration(milliseconds: 2500));
+                    await Vibration.vibrate(duration: 100);
+                    Navigator.popUntil(context, (route) => route.isFirst);
+                  }
+                }
+              },
+              onLongPress: () async {
+                await _handleVoiceCommand();
+              },
+            ),
           ),
           // Remove the status bar and debug overlay
           // Only show the listening indicator at the bottom when listening
