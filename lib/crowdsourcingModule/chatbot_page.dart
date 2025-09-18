@@ -48,8 +48,8 @@ class _ChatbotPageState extends State<ChatbotPage> {
   final int _maxContextMessages = 10;
   
   // Gemini API Configuration
-  final String _apiKey = 'AIzaSyA-aoTz99SRfSdyy0Q2Slb8JsgUZ2oXwm8';
-  final String _modelName = 'gemini-1.5-flash';  // Updated to a supported model
+  final String _apiKey = 'AIzaSyC_F8UWnADTh8B15lYRcJ5GUJp61p-aBJw';
+  final String _modelName = 'gemini-2.5-flash-lite';  // Updated to a supported model
 
   // Accessibility features
   late FlutterTts _flutterTts;
@@ -825,7 +825,7 @@ class _ChatbotPageState extends State<ChatbotPage> {
 
   Future<String> _getGeminiResponse(String userMessage) async {
     // Simpler approach: just send the current message and system instruction
-    final apiUrl = 'https://generativelanguage.googleapis.com/v1/models/$_modelName:generateContent?key=$_apiKey';
+    final apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/$_modelName:generateContent?key=$_apiKey';
     
     try {
       // Create a simpler request format for better compatibility

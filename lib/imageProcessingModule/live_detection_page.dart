@@ -6,11 +6,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:vibration/vibration.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:just_audio/just_audio.dart';
 import 'dart:typed_data';
+import '../gesture_recognition_service.dart';
 import '../home.dart';
 
 class LiveDetectionPage extends StatefulWidget {
@@ -31,8 +31,6 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
   bool _isSpeaking = false;
   String _detectionResult = "Starting detection...";
   FlutterTts flutterTts = FlutterTts();
-  final stt.SpeechToText _speechToText = stt.SpeechToText();
-  bool _isListening = false;
 
   // Audio players for different sounds
   final AudioPlayer _obstaclePlayer = AudioPlayer();
@@ -41,7 +39,6 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
 
   // Detection settings
   bool _continuousMode = true;
-  bool _voiceCommandsEnabled = true;
   bool _audioFeedbackEnabled = true;
   bool _hapticFeedbackEnabled = true;
 
@@ -49,11 +46,10 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
   Map<String, dynamic> _lastDetectedObjects = {};
 
   // Gemini API key
-  final String _apiKey = "AIzaSyA-aoTz99SRfSdyy0Q2Slb8JsgUZ2oXwm8";
+  final String _apiKey = "AIzaSyC_F8UWnADTh8B15lYRcJ5GUJp61p-aBJ"; //w
   late GenerativeModel _model;
 
   Timer? _captureTimer;
-  Timer? _voiceCommandsTimer;
   Timer? _orientationCheckTimer;
 
   // Gesture detection variables
@@ -66,7 +62,6 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
     super.initState();
     _initGemini();
     _initTts();
-    _initSpeechRecognition();
     _initAudioFeedback();
     _requestPermissions();
     _startOrientationTracking();
@@ -74,7 +69,7 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
 
   void _initGemini() {
     _model = GenerativeModel(
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash-lite", //switch to 1.5 flash is the most stable
       apiKey: _apiKey,
     );
   }
@@ -88,33 +83,7 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
       setState(() {
         _isSpeaking = false;
       });
-
-      // If in continuous mode and not currently speaking or detecting,
-      // start listening for voice commands
-      if (_voiceCommandsEnabled && !_isListening && !_isDetecting) {
-        _startListening();
-      }
     });
-  }
-
-  Future<void> _initSpeechRecognition() async {
-    bool available = await _speechToText.initialize(
-      onStatus: (status) {
-        debugPrint('Speech recognition status: $status');
-        if (status == 'done' || status == 'notListening') {
-          setState(() {
-            _isListening = false;
-          });
-        }
-      },
-      onError: (error) => debugPrint('Speech recognition error: $error'),
-    );
-
-    if (available && _voiceCommandsEnabled) {
-      _startVoiceCommandListener();
-    } else {
-      debugPrint("Speech recognition not available");
-    }
   }
 
   void _initAudioFeedback() async {
@@ -130,7 +99,6 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
   }
 
   Future<void> _requestPermissions() async {
-    final micStatus = await Permission.microphone.request();
     final cameraStatus = await Permission.camera.request();
 
     if (cameraStatus.isGranted) {
@@ -140,13 +108,6 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
         _detectionResult = "Camera permission denied";
       });
       _speak("Camera permission is required for this feature to work.");
-    }
-
-    if (!micStatus.isGranted) {
-      setState(() {
-        _voiceCommandsEnabled = false;
-      });
-      _speak("Microphone permission denied. Voice commands will be disabled.");
     }
   }
 
@@ -210,16 +171,11 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
       // Start the detection loop
       _startDetection();
 
-      // If voice commands are enabled, start listening
-      if (_voiceCommandsEnabled) {
-        _startVoiceCommandListener();
-      }
-
       // Wait for navigation announcement to complete before starting welcome message
       await Future.delayed(const Duration(seconds: 3));
 
       // Welcome message
-      _speak("Live detection started. Say 'help' for available voice commands.");
+      _speak("Live detection started.");
     } catch (e) {
       setState(() {
         _detectionResult = "Error initializing camera: $e";
@@ -228,70 +184,10 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
     }
   }
 
-  void _startVoiceCommandListener() {
-    // Start periodic listening for voice commands
-    _voiceCommandsTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (!_isSpeaking && !_isListening && _voiceCommandsEnabled) {
-        _startListening();
-      }
-    });
-
-    // Start listening immediately
-    if (_voiceCommandsEnabled && !_isSpeaking && !_isListening) {
-      _startListening();
-    }
-  }
-
-  void _startListening() {
-    if (!_speechToText.isAvailable || _isSpeaking) return;
-
-    _speechToText.listen(
-      onResult: (result) {
-        if (result.finalResult) {
-          String command = result.recognizedWords.toLowerCase();
-          _processVoiceCommand(command);
-        }
-      },
-      listenFor: const Duration(seconds: 5),
-      pauseFor: const Duration(seconds: 3),
-      listenMode: stt.ListenMode.confirmation,
-    );
-
-    setState(() {
-      _isListening = true;
-    });
-  }
-
-  void _processVoiceCommand(String command) {
-    debugPrint("Voice command detected: $command");
-
-    if (command.contains('start') || command.contains('detect') || command.contains('analyze')) {
-      _captureAndAnalyzeFrame();
-      _speak("Starting detection");
-    }
-    else if (command.contains('stop') || command.contains('pause')) {
-      _pauseDetection();
-      _speak("Detection paused");
-    }
-    else if (command.contains('resume')) {
-      _resumeDetection();
-      _speak("Resuming detection");
-    }
-    else if (command.contains('continuous')) {
-      _toggleContinuousMode();
-    }
-    else if (command.contains('where am i') || command.contains('location')) {
-      _announceCurrentLocation();
-    }
-    else if (command.contains('help')) {
-      _provideHelpInformation();
-    }
-  }
-
   void _pauseDetection() {
     _captureTimer?.cancel();
     setState(() {
-      _detectionResult = "Detection paused. Say 'resume' to continue.";
+      _detectionResult = "Detection paused.";
     });
   }
 
@@ -311,16 +207,6 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
       _captureTimer?.cancel();
       _speak("Continuous mode disabled");
     }
-  }
-
-  void _announceCurrentLocation() {
-    // This would use geolocation and previous detections to describe surroundings
-    _speak("Based on recent detections, ${_detectionResult}");
-  }
-
-  void _provideHelpInformation() {
-    const helpMessage = "Available commands: Start detection, Stop, Resume, Continuous mode, Where am I, and Help.";
-    _speak(helpMessage);
   }
 
   void _startDetection() {
@@ -481,7 +367,9 @@ Prioritize safety information for visually impaired users.
 
     // Provide haptic feedback for obstacle
     if (_hapticFeedbackEnabled) {
-      Vibration.vibrate(pattern: [0, 100, 100, 100, 100, 100]);
+      // Fixed vibration pattern - the first value is the delay before starting,
+      // then alternating between vibration duration and pause duration in milliseconds
+      Vibration.vibrate(pattern: [0, 300, 200, 300, 200, 300]);
     }
   }
 
@@ -541,7 +429,7 @@ Prioritize safety information for visually impaired users.
     if (_hapticFeedbackEnabled) {
       Vibration.vibrate(duration: 100);
     }
-
+    
     // Navigate back to Image Processing page
     Navigator.of(context).pop();
   }
@@ -558,11 +446,9 @@ Prioritize safety information for visually impaired users.
   @override
   void dispose() {
     _captureTimer?.cancel();
-    _voiceCommandsTimer?.cancel();
     _orientationCheckTimer?.cancel();
     _cameraController?.dispose();
     flutterTts.stop();
-    _speechToText.cancel();
     _obstaclePlayer.dispose();
     _personPlayer.dispose();
     _textPlayer.dispose();
@@ -571,11 +457,72 @@ Prioritize safety information for visually impaired users.
 
   @override
   Widget build(BuildContext context) {
+    final Size screenSize = MediaQuery.of(context).size;
+    final bool isSmallScreen = screenSize.width < 400;
+    final double horizontalPadding = isSmallScreen ? 12.0 : 20.0;
+    final double cardElevation = isSmallScreen ? 3.0 : 5.0;
+    
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF2561FA),
-        foregroundColor: Colors.white,
-        title: const Text('Live Detection'),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF2561FA).withOpacity(0.9),
+                const Color(0xFF2561FA).withOpacity(0.9),
+              ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: EdgeInsets.all(isSmallScreen ? 3 : 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.camera_enhance,
+                color: Colors.white,
+                size: isSmallScreen ? 18 : 20,
+              ),
+            ),
+            SizedBox(width: isSmallScreen ? 8 : 10),
+            Text(
+              'Live Detection',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: isSmallScreen ? 20 : 22,
+                color : Colors.white,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(
+              _continuousMode ? Icons.loop : Icons.sync_disabled,
+              color: Colors.white,
+              size: isSmallScreen ? 22 : 24,
+            ),
+            onPressed: _toggleContinuousMode,
+            tooltip: _continuousMode ? 'Continuous Mode On' : 'Continuous Mode Off',
+          ),
+        ],
       ),
       body: GestureDetector(
         onPanStart: _onPanStart,
@@ -586,164 +533,392 @@ Prioritize safety information for visually impaired users.
               flex: 3,
               child: Stack(
                 children: [
-                  // Camera Preview
-                  _isCameraInitialized
-                      ? CameraPreview(_cameraController!)
-                      : const Center(child: CircularProgressIndicator()),
-
-                  // Voice command indicator
-                  if (_isListening)
-                    Positioned(
-                      top: 20,
-                      right: 20,
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.7),
-                          borderRadius: BorderRadius.circular(20),
+                  // Camera Preview with rounded corners
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: const Color(0xFF2561FA).withOpacity(0.3),
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF2561FA).withOpacity(0.2),
+                          blurRadius: 15,
+                          spreadRadius: 2,
                         ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.mic, color: Colors.white),
-                            SizedBox(width: 8),
-                            Text('Listening...', style: TextStyle(color: Colors.white)),
-                          ],
-                        ),
+                      ],
+                    ),
+                    margin: EdgeInsets.fromLTRB(12, MediaQuery.of(context).padding.top + 60, 12, 12),
+                    child: _isCameraInitialized
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: CameraPreview(_cameraController!),
+                          )
+                        : const Center(
+                            child: CircularProgressIndicator(
+                              color: Color(0xFF3366FF),
+                              strokeWidth: 3,
+                            ),
+                          ),
+                  ),
+                  // Status indicator overlay
+                  Positioned(
+                    top: 90,
+                    right: 24,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _isDetecting
+                            ? Colors.orange.withOpacity(0.85)
+                            : const Color(0xFF4CAF50).withOpacity(0.85),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.2),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _isDetecting ? Icons.radar : Icons.visibility,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _isDetecting ? 'Analyzing' : 'Ready',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                  ),
                 ],
               ),
             ),
             Expanded(
               flex: 2,
               child: Container(
-                padding: const EdgeInsets.all(16.0),
                 width: double.infinity,
-                color: Colors.black87,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Analysis Result:',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                              color: Colors.white,
+                decoration: BoxDecoration(
+                   gradient: LinearGradient(
+                     begin: Alignment.topCenter,
+                     end: Alignment.bottomCenter,
+                     colors: [
+                       const Color(0xFF1A1A1A),
+                       const Color(0xFF0D0D0D),
+                     ],
+                   ),
+                   borderRadius: const BorderRadius.only(
+                     topLeft: Radius.circular(24),
+                     topRight: Radius.circular(24),
+                   ),
+                   boxShadow: [
+                     BoxShadow(
+                       color: Colors.black.withOpacity(0.3),
+                       spreadRadius: 1,
+                       blurRadius: 10,
+                       offset: const Offset(0, -3),
+                     ),
+                   ],
+                 ),
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Analysis Result Section
+                        Container(
+                          padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.4),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: const Color(0xFF2561FA).withOpacity(0.3),
+                              width: 1,
                             ),
-                          ),
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: Icon(
-                                  _continuousMode ? Icons.loop : Icons.sync_disabled,
-                                  color: Colors.white,
-                                ),
-                                onPressed: _toggleContinuousMode,
-                                tooltip: _continuousMode ? 'Continuous Mode On' : 'Continuous Mode Off',
-                              ),
-                              IconButton(
-                                icon: Icon(
-                                  _voiceCommandsEnabled ? Icons.mic : Icons.mic_off,
-                                  color: Colors.white,
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    _voiceCommandsEnabled = !_voiceCommandsEnabled;
-                                    if (_voiceCommandsEnabled) {
-                                      _startVoiceCommandListener();
-                                      _speak("Voice commands enabled");
-                                    } else {
-                                      _voiceCommandsTimer?.cancel();
-                                      _speechToText.cancel();
-                                      _speak("Voice commands disabled");
-                                    }
-                                  });
-                                },
-                                tooltip: _voiceCommandsEnabled ? 'Voice Commands On' : 'Voice Commands Off',
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.2),
+                                blurRadius: cardElevation + 3,
+                                offset: const Offset(0, 2),
                               ),
                             ],
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _detectionResult,
-                        style: const TextStyle(fontSize: 16, color: Colors.white),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          ElevatedButton(
-                            onPressed: _isDetecting ? null : _captureAndAnalyzeFrame,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2561FA),
-                              foregroundColor: Colors.white,
-                            ),
-                            child: Text(_isDetecting ? 'Analyzing...' : 'Analyze Now'),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.analytics_outlined,
+                                    color: Color(0xFF3366FF),
+                                    size: 22,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  const Text(
+                                    'Analysis Result',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 20,
+                                      color: Colors.white,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(
+                                color: Color(0xFF444444),
+                                thickness: 1,
+                                height: 24,
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  _detectionResult,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.white,
+                                    height: 1.5,
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          ElevatedButton(
-                            onPressed: _isSpeaking ? null : () => _speak(_detectionResult),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2561FA),
-                              foregroundColor: Colors.white,
+                        ),
+                        
+                        const SizedBox(height: 20),
+                        
+                        // Action Buttons
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _isDetecting ? null : _captureAndAnalyzeFrame,
+                                icon: Icon(
+                                  _isDetecting ? Icons.hourglass_top : Icons.camera_alt,
+                                  size: isSmallScreen ? 20 : 22,
+                                ),
+                                label: Text(
+                                  _isDetecting ? 'Analyzing...' : 'Analyze Now',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: isSmallScreen ? 14 : 16,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF3366FF),
+                                  foregroundColor: Colors.white,
+                                  disabledBackgroundColor: Colors.grey.shade600,
+                                  disabledForegroundColor: Colors.white70,
+                                  padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 12 : 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: cardElevation,
+                                  shadowColor: const Color(0xFF3366FF).withOpacity(0.6),
+                                ),
+                              ),
                             ),
-                            child: Text(_isSpeaking ? 'Speaking...' : 'Read Aloud'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          ElevatedButton(
-                            onPressed: () {
-                              setState(() {
-                                _audioFeedbackEnabled = !_audioFeedbackEnabled;
-                              });
-                              _speak(_audioFeedbackEnabled
-                                  ? "Audio feedback enabled"
-                                  : "Audio feedback disabled");
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _audioFeedbackEnabled
-                                  ? const Color(0xFF2561FA)
-                                  : Colors.grey,
-                              foregroundColor: Colors.white,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _isSpeaking ? null : () => _speak(_detectionResult),
+                                icon: Icon(
+                                  _isSpeaking ? Icons.volume_up : Icons.record_voice_over,
+                                  size: isSmallScreen ? 20 : 22,
+                                ),
+                                label: Text(
+                                  _isSpeaking ? 'Speaking...' : 'Read Aloud',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: isSmallScreen ? 14 : 16,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF3366FF),
+                                  foregroundColor: Colors.white,
+                                  disabledBackgroundColor: Colors.grey.shade600,
+                                  disabledForegroundColor: Colors.white70,
+                                  padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 12 : 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: cardElevation,
+                                  shadowColor: const Color(0xFF3366FF).withOpacity(0.6),
+                                ),
+                              ),
                             ),
-                            child: const Text('Audio Cues'),
-                          ),
-                          ElevatedButton(
-                            onPressed: () {
-                              setState(() {
-                                _hapticFeedbackEnabled = !_hapticFeedbackEnabled;
-                              });
-
-                              _speak(_hapticFeedbackEnabled
-                                  ? "Haptic feedback enabled"
-                                  : "Haptic feedback disabled");
-
-                              // Provide a test vibration
-                              if (_hapticFeedbackEnabled) {
-                                Vibration.vibrate(duration: 300);
-                              }
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _hapticFeedbackEnabled
-                                  ? const Color(0xFF2561FA)
-                                  : Colors.grey,
-                              foregroundColor: Colors.white,
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 20),
+                        
+                        // Settings Toggles
+                        Container(
+                          padding: EdgeInsets.all(isSmallScreen ? 14 : 16),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.4),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Colors.grey.withOpacity(0.3),
+                              width: 1,
                             ),
-                            child: const Text('Haptic Feedback'),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.2),
+                                blurRadius: cardElevation + 3,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ],
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.settings,
+                                    color: Color(0xFF3366FF),
+                                    size: 22,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  const Text(
+                                    'Feedback Settings',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: Colors.white,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(
+                                color: Color(0xFF444444),
+                                thickness: 1,
+                                height: 24,
+                              ),
+                              // Audio Feedback Toggle
+                              SwitchListTile(
+                                title: const Text(
+                                  'Audio Cues',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  _audioFeedbackEnabled ? 'Enabled' : 'Disabled',
+                                  style: TextStyle(
+                                    color: Colors.grey[400],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                value: _audioFeedbackEnabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _audioFeedbackEnabled = value;
+                                  });
+                                  _speak(_audioFeedbackEnabled
+                                      ? "Audio feedback enabled"
+                                      : "Audio feedback disabled");
+                                },
+                                activeColor: const Color(0xFF3366FF),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                              // Haptic Feedback Toggle
+                              SwitchListTile(
+                                title: const Text(
+                                  'Haptic Feedback',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  _hapticFeedbackEnabled ? 'Enabled' : 'Disabled',
+                                  style: TextStyle(
+                                    color: Colors.grey[400],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                value: _hapticFeedbackEnabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _hapticFeedbackEnabled = value;
+                                  });
+                                  _speak(_hapticFeedbackEnabled
+                                      ? "Haptic feedback enabled"
+                                      : "Haptic feedback disabled");
+                                  if (_hapticFeedbackEnabled) {
+                                    Vibration.vibrate(duration: 300);
+                                  }
+                                },
+                                activeColor: const Color(0xFF3366FF),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 16),
+                        
+                        // Swipe instruction
+                        Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(
+                                  Icons.swipe,
+                                  color: Colors.white70,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Swipe left/right to navigate',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
