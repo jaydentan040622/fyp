@@ -3,12 +3,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:vibration/vibration.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'caregiver_services.dart';
 import 'auth_gate.dart';
 import 'connection_requests_screen.dart';
+import '../gesture_recognition_service.dart';
+import '../home.dart';
 
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({Key? key}) : super(key: key);
@@ -34,10 +37,229 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   bool _isUploadingImage = false;
 
+  // Gesture recognition service
+  final GestureRecognitionService _gestureService = GestureRecognitionService();
+  static const String _pageId = 'user_profile';
+
+  // Accessibility state management
+  String? _currentFocusedField;
+  Map<String, bool> _buttonConfirmationStates = {};
+  bool _isAudioFeedbackEnabled = true;
+  Map<String, FocusNode> _focusNodes = {};
+  bool _hasAnnouncedPage = false;
+
   @override
   void initState() {
     super.initState();
+    _initializeAccessibility();
+    _initializeGestureService();
     _loadUserData();
+  }
+
+  void _initializeAccessibility() {
+    // Initialize focus nodes for text fields
+    _focusNodes['username'] = FocusNode();
+    _focusNodes['email'] = FocusNode();
+    _focusNodes['password'] = FocusNode();
+    _focusNodes['phone'] = FocusNode();
+    _focusNodes['emergency'] = FocusNode();
+    _focusNodes['caregiver'] = FocusNode();
+    
+    // Add focus listeners for each field
+    _focusNodes.forEach((key, node) {
+      node.addListener(() => _onFieldFocusChanged(key, node.hasFocus));
+    });
+  }
+
+  Future<void> _initializeGestureService() async {
+    try {
+      await _gestureService.initialize();
+      _gestureService.setGestureCallback(_handleGesture);
+      _gestureService.setActiveAnnouncementSource(_pageId);
+      
+      // Announce page after initialization
+      _announceCurrentPage();
+    } catch (e) {
+      debugPrint('Failed to initialize gesture service: $e');
+    }
+  }
+
+  Future<void> _announceCurrentPage() async {
+    // Ensure we only announce once per page visit
+    if (_hasAnnouncedPage) return;
+    
+    // Wait for page to fully load and any loading states to complete
+    await Future.delayed(const Duration(milliseconds: 800));
+    
+    if (mounted && _gestureService.canMakeAnnouncements(_pageId) && !_isLoading) {
+      _hasAnnouncedPage = true;
+      await _gestureService.speak(
+        'User Profile page. Manage your personal information, account settings, and caregiver connections. Swipe left to go back to home. Draw a circle to repeat this announcement.',
+        pageId: _pageId
+      );
+    }
+  }
+
+  void _handleGesture(GestureType gestureType) {
+    debugPrint('Gesture detected: $gestureType');
+    
+    switch (gestureType) {
+      case GestureType.swipeLeft:
+        _navigateToHome();
+        break;
+      case GestureType.circleGesture:
+        _repeatPageAnnouncement();
+        break;
+      default:
+        break;
+    }
+  }
+
+  Future<void> _repeatPageAnnouncement() async {
+    debugPrint('Circle gesture detected - repeating page announcement');
+    
+    // Provide haptic feedback for circle gesture
+    _provideHapticFeedback('double');
+    
+    // Stop any ongoing speech first
+    _gestureService.stopAllAnnouncements();
+    
+    // Wait a moment then announce
+    await Future.delayed(const Duration(milliseconds: 300));
+    
+    if (mounted && _gestureService.canMakeAnnouncements(_pageId)) {
+      String announcement = '';
+      
+      if (_isEditing) {
+        announcement = 'User Profile page - Edit Mode. You are currently editing your profile information. Fill in the fields and click Save Changes when done. Swipe left to return to the home page.';
+      } else {
+        announcement = 'User Profile page - View Mode. Your personal information is displayed. Click Edit Profile to make changes. Swipe left to return to the home page.';
+      }
+      
+      await _gestureService.speak(announcement, pageId: _pageId);
+    }
+  }
+
+  void _navigateToHome() {
+    _gestureService.clearActiveAnnouncementSource(_pageId);
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const HomeScreen()),
+    );
+  }
+
+  // Accessibility Methods
+  void _onFieldFocusChanged(String fieldName, bool hasFocus) {
+    if (hasFocus) {
+      _currentFocusedField = fieldName;
+      _announceFieldSelection(fieldName);
+      _provideHapticFeedback('light');
+    } else {
+      if (_currentFocusedField == fieldName) {
+        _currentFocusedField = null;
+      }
+    }
+  }
+
+  Future<void> _announceFieldSelection(String fieldName) async {
+    if (!_isAudioFeedbackEnabled) return;
+    
+    String announcement = '';
+    String guidance = '';
+    
+    switch (fieldName) {
+      case 'username':
+        announcement = 'Username field selected';
+        guidance = 'Enter your display name';
+        break;
+      case 'email':
+        announcement = 'Email field selected';
+        guidance = 'Enter your email address';
+        break;
+      case 'password':
+        announcement = 'Password field selected';
+        guidance = 'Enter a new password to change it';
+        break;
+      case 'phone':
+        announcement = 'Phone number field selected';
+        guidance = 'Enter your phone number';
+        break;
+      case 'emergency':
+        announcement = 'Emergency contact field selected';
+        guidance = 'Enter emergency contact phone number';
+        break;
+      case 'caregiver':
+        announcement = 'Caregiver email field selected';
+        guidance = 'Enter caregiver email address';
+        break;
+    }
+    
+    await _gestureService.speak('$announcement. $guidance. Text input is ready.', pageId: _pageId);
+  }
+
+  void _provideHapticFeedback(String intensity) {
+    switch (intensity) {
+      case 'light':
+        Vibration.vibrate(duration: 50);
+        break;
+      case 'medium':
+        Vibration.vibrate(duration: 100);
+        break;
+      case 'heavy':
+        Vibration.vibrate(duration: 200);
+        break;
+      case 'double':
+        Vibration.vibrate(pattern: [50, 50, 100]);
+        break;
+    }
+  }
+
+  Future<void> _handleButtonClick(String buttonName, VoidCallback action) async {
+    bool isConfirmed = _buttonConfirmationStates[buttonName] ?? false;
+    
+    if (!isConfirmed) {
+      // First click - provide confirmation prompt
+      _buttonConfirmationStates[buttonName] = true;
+      _provideHapticFeedback('medium');
+      
+      String confirmationMessage = '';
+      switch (buttonName) {
+        case 'edit_profile':
+          confirmationMessage = 'Edit Profile button selected. Click again to confirm and start editing.';
+          break;
+        case 'logout':
+          confirmationMessage = 'Logout button selected. Click again to confirm and logout.';
+          break;
+        case 'save_profile':
+          confirmationMessage = 'Save Profile button selected. Click again to confirm and save changes.';
+          break;
+        case 'add_caregiver':
+          confirmationMessage = 'Add Caregiver button selected. Click again to confirm and send request.';
+          break;
+        case 'remove_caregiver':
+          confirmationMessage = 'Remove Caregiver button selected. Click again to confirm removal.';
+          break;
+        default:
+          confirmationMessage = '$buttonName button selected. Click again to confirm.';
+      }
+      
+      await _gestureService.speak(confirmationMessage, pageId: _pageId);
+      
+      // Reset confirmation state after 3 seconds
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          setState(() {
+            _buttonConfirmationStates[buttonName] = false;
+          });
+        }
+      });
+    } else {
+      // Second click - execute action
+      _buttonConfirmationStates[buttonName] = false;
+      _provideHapticFeedback('heavy');
+      await _gestureService.speak('Action confirmed.', pageId: _pageId);
+      action();
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -711,21 +933,43 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   @override
   void dispose() {
+    // Stop all announcements and clear announcement sources
+    _gestureService.stopAllAnnouncements();
+    _gestureService.clearActiveAnnouncementSource(_pageId);
+    _gestureService.clearGestureCallback();
+    
+    // Dispose controllers
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _phoneController.dispose();
     _emergencyContactController.dispose();
     _caregiverEmailController.dispose();
+    
+    // Dispose focus nodes
+    _focusNodes.forEach((key, node) {
+      node.dispose();
+    });
+    
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF2561FA)))
-          : SingleChildScrollView(
+      body: GestureDetector(
+        onPanStart: (details) {
+          _gestureService.startGesture(details.localPosition);
+        },
+        onPanUpdate: (details) {
+          _gestureService.updateGesture(details.localPosition);
+        },
+        onPanEnd: (details) {
+          _gestureService.endGesture();
+        },
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFF2561FA)))
+            : SingleChildScrollView(
         child: Column(
           children: [
             // Blue header section
@@ -878,6 +1122,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     controller: _usernameController,
                     enabled: _isEditing,
                     icon: Icons.person_outline,
+                    fieldKey: 'username',
                   ),
                   const SizedBox(height: 24),
 
@@ -886,6 +1131,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     controller: _emailController,
                     enabled: false, // Email cannot be modified
                     icon: Icons.email_outlined,
+                    fieldKey: 'email',
                     keyboardType: TextInputType.emailAddress,
                   ),
                   const SizedBox(height: 24),
@@ -897,6 +1143,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       enabled: true,
                       isPassword: true,
                       icon: Icons.lock_outline,
+                      fieldKey: 'password',
                       hintText: 'Leave blank to keep current password',
                     ),
 
@@ -908,6 +1155,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     controller: _phoneController,
                     enabled: _isEditing,
                     icon: Icons.phone_outlined,
+                    fieldKey: 'phone',
                     keyboardType: TextInputType.phone,
                     hintText: '0121234567',
                   ),
@@ -918,6 +1166,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     controller: _emergencyContactController,
                     enabled: _isEditing,
                     icon: Icons.contact_phone_outlined,
+                    fieldKey: 'emergency',
                     keyboardType: TextInputType.phone,
                     hintText: '0121234567',
                   ),
@@ -936,12 +1185,16 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     child: ElevatedButton(
                       onPressed: _isLoading
                           ? null
-                          : () {
+                          : () async {
                         if (_isEditing) {
-                          _saveProfile();
+                          await _handleButtonClick('save_profile', () {
+                            _saveProfile();
+                          });
                         } else {
-                          setState(() {
-                            _isEditing = true;
+                          await _handleButtonClick('edit_profile', () {
+                            setState(() {
+                              _isEditing = true;
+                            });
                           });
                         }
                       },
@@ -980,7 +1233,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     width: double.infinity,
                     height: 60,
                     child: ElevatedButton(
-                      onPressed: _isLoading ? null : _logout,
+                      onPressed: _isLoading ? null : () async {
+                        await _handleButtonClick('logout', _logout);
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red,
                         foregroundColor: Colors.white,
@@ -1007,9 +1262,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           ],
         ),
       ),
-    );
+        ),
+      );
   }
-
   Widget _buildCaregiverSection() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1087,7 +1342,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: _isLoading ? null : _removeCaregiver,
+                      onPressed: _isLoading ? null : () async {
+                        await _handleButtonClick('remove_caregiver', _removeCaregiver);
+                      },
                       icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
                       label: const Text(
                         'Remove Caregiver',
@@ -1142,6 +1399,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   // Email input field
                   TextField(
                     controller: _caregiverEmailController,
+                    focusNode: _focusNodes['caregiver'],
                     decoration: InputDecoration(
                       labelText: 'Caregiver Email Address',
                       hintText: 'Enter the email of your caregiver',
@@ -1159,6 +1417,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       ),
                     ),
                     keyboardType: TextInputType.emailAddress,
+                    onTap: () {
+                      _provideHapticFeedback('light');
+                    },
                   ),
                   const SizedBox(height: 16),
 
@@ -1166,7 +1427,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _addCaregiver,
+                      onPressed: _isLoading ? null : () async {
+                        await _handleButtonClick('add_caregiver', _addCaregiver);
+                      },
                       icon: _isLoading
                           ? const SizedBox(
                         width: 16,
@@ -1230,6 +1493,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     required TextEditingController controller,
     required bool enabled,
     required IconData icon,
+    required String fieldKey, // New parameter for accessibility
     bool isPassword = false,
     String? hintText,
     TextInputType keyboardType = TextInputType.text,
@@ -1268,6 +1532,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             enabled: enabled,
             obscureText: isPassword,
             keyboardType: keyboardType,
+            focusNode: _focusNodes[fieldKey],
             style: TextStyle(
               fontSize: 16,
               color: enabled ? Colors.black87 : Colors.black54,
@@ -1286,6 +1551,12 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             ),
+            // Accessibility features
+            onTap: () {
+              if (enabled) {
+                _provideHapticFeedback('light');
+              }
+            },
           ),
         ),
       ],

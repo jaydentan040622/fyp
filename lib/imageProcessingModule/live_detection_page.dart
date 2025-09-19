@@ -400,10 +400,10 @@ Prioritize safety information for visually impaired users.
     // Check if it's a horizontal swipe
     if (deltaX.abs() >= minSwipeDistance && deltaY.abs() <= maxVerticalDeviation) {
       if (deltaX > 0) {
-        // Swipe Right - Go to Image Processing page
+        // Swipe Right - Go to main page
         _handleSwipeRight();
       } else {
-        // Swipe Left - Return to main page
+        // Swipe Left - Return to previous page immediately
         _handleSwipeLeft();
       }
     }
@@ -416,12 +416,9 @@ Prioritize safety information for visually impaired users.
     if (_hapticFeedbackEnabled) {
       Vibration.vibrate(duration: 100);
     }
-
-    // Navigate to main page
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const HomeScreen()),
-          (route) => false,
-    );
+    
+    // Navigate back to previous page immediately
+    Navigator.of(context).pop();
   }
 
   void _handleSwipeRight() {
@@ -430,8 +427,11 @@ Prioritize safety information for visually impaired users.
       Vibration.vibrate(duration: 100);
     }
     
-    // Navigate back to Image Processing page
-    Navigator.of(context).pop();
+    // Navigate to main page
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const HomeScreen()),
+          (route) => false,
+    );
   }
 
   Future<void> _speak(String text) async {
@@ -462,9 +462,13 @@ Prioritize safety information for visually impaired users.
     final double horizontalPadding = isSmallScreen ? 12.0 : 20.0;
     final double cardElevation = isSmallScreen ? 3.0 : 5.0;
     
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
+    return GestureDetector(
+      onPanStart: _onPanStart,
+      onPanEnd: _onPanEnd,
+      behavior: HitTestBehavior.translucent, // This ensures gestures are detected across the entire screen
+      child: Scaffold(
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.transparent,
         flexibleSpace: Container(
@@ -524,10 +528,7 @@ Prioritize safety information for visually impaired users.
           ),
         ],
       ),
-      body: GestureDetector(
-        onPanStart: _onPanStart,
-        onPanEnd: _onPanEnd,
-        child: Column(
+      body: Column(
           children: [
             Expanded(
               flex: 3,
