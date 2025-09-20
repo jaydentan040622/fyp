@@ -256,6 +256,9 @@ class _AuthGateState extends State<AuthGate> {
                   child: TextButton(
                     onPressed: () async {
                       await _handleButtonClick('login', () {
+                        // Stop any ongoing announcements and clear active source before navigating
+                        _gestureService.stopAllAnnouncements();
+                        _gestureService.clearActiveAnnouncementSource(_pageId);
                         Navigator.push(
                           context,
                           MaterialPageRoute(builder: (context) => const LoginPage()),
@@ -285,6 +288,9 @@ class _AuthGateState extends State<AuthGate> {
                   child: TextButton(
                     onPressed: () async {
                       await _handleButtonClick('guest', () {
+                        // Stop any ongoing announcements and clear active source before navigating
+                        _gestureService.stopAllAnnouncements();
+                        _gestureService.clearActiveAnnouncementSource(_pageId);
                         Navigator.pushReplacement(
                           context,
                           MaterialPageRoute(builder: (context) => const HomeScreen()),
@@ -314,6 +320,9 @@ class _AuthGateState extends State<AuthGate> {
                   child: TextButton(
                     onPressed: () async {
                       await _handleButtonClick('register', () {
+                        // Stop any ongoing announcements and clear active source before navigating
+                        _gestureService.stopAllAnnouncements();
+                        _gestureService.clearActiveAnnouncementSource(_pageId);
                         Navigator.push(
                           context,
                           MaterialPageRoute(builder: (context) => const RegisterPage()),
