@@ -331,26 +331,37 @@ class _VoiceNotePageState extends State<VoiceNotePage> {
     );
   }
 
-  Future<void> _startRecording() async {
-    await flutterTts.stop(); // Stop any ongoing TTS speech
+  Future<void> _startRecording({int maxSeconds = 59}) async {
+    await flutterTts.stop();
+
     if (await _audioRecorder.hasPermission()) {
       final dir = await getTemporaryDirectory();
       final filePath = '${dir.path}/${const Uuid().v4()}.wav';
+
       await _audioRecorder.start(
-        const RecordConfig(
+        RecordConfig(
           encoder: AudioEncoder.wav,
-          bitRate: 128000,
+          bitRate: 64000,
           sampleRate: 44100,
-          numChannels: 1, // Ensure mono audio
+          numChannels: 1,
         ),
         path: filePath,
       );
+
       setState(() {
         _isRecording = true;
         _recordedFilePath = filePath;
       });
+
+      // 👇 Auto stop after maxSeconds
+      Future.delayed(Duration(seconds: maxSeconds), () async {
+        if (_isRecording) {
+          await _stopRecording(); // let stopRecording handle prompt
+        }
+      });
     }
   }
+
 
   Future<void> _stopRecording() async {
     final path = await _audioRecorder.stop();
