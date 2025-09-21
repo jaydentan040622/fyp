@@ -389,6 +389,12 @@ class _OCRResultPageState extends State<OCRResultPage> {
       // 2. Now read the extracted text
       await _aggressiveStopAnnouncements();
       await _readExtractedText();
+
+      // 3. Provide voice guide for long press functionality
+      await Future.delayed(const Duration(milliseconds: 1000));
+      await _aggressiveStopAnnouncements();
+      await Future.delayed(const Duration(milliseconds: 5000));
+      await _flutterTts.speak("Hold any place in the screen to repeat extracted text");
     } else {
       await _aggressiveStopAnnouncements();
       await _flutterTts.speak("No text found in the image.");

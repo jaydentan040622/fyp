@@ -438,187 +438,242 @@ class _SearchDestinationState extends State<SearchDestination> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
+      body: Stack(
         children: [
-          // Blue header
-          Container(
-            width: double.infinity,
-            height: 120,
-            color: const Color(0xFF2561FA),
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
-                      onPressed: () async {
+          Column(
+            children: [
+              // Blue header
+              Container(
+                width: double.infinity,
+                height: 120,
+                color: const Color(0xFF2561FA),
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back, color: Colors.white),
+                          onPressed: () async {
+                            await flutterTts.stop();
+                            await flutterTts.speak("Going back");
+                            await Future.delayed(const Duration(milliseconds: 2000));
+                            await Vibration.vibrate(duration: 100);
+                            Navigator.pop(context);
+                          },
+                        ),
+                        const Expanded(
+                          child: Text(
+                            'Optichat',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(_isSpeaking ? Icons.volume_off : Icons.volume_up, color: Colors.white),
+                          onPressed: _isSpeaking ? null : _speakGuide,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              // Main content
+              Expanded(
+                child: GestureDetector(
+                  onVerticalDragEnd: (details) {
+                    if (details.primaryVelocity != null && details.primaryVelocity! > 0) {
+                      _listen();
+                    }
+                  },
+                  onHorizontalDragEnd: (details) async {
+                    if (details.primaryVelocity != null) {
+                      if (details.primaryVelocity! < 0) {
+                        // Swipe left (right-to-left): go back
                         await flutterTts.stop();
+                        await Future.delayed(const Duration(milliseconds: 200));
                         await flutterTts.speak("Going back");
-                        await Future.delayed(const Duration(milliseconds: 2000));
+                        await Future.delayed(const Duration(milliseconds: 1500));
                         await Vibration.vibrate(duration: 100);
                         Navigator.pop(context);
-                      },
-                    ),
-                    const Expanded(
-                      child: Text(
-                        'Optichat',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(_isSpeaking ? Icons.volume_off : Icons.volume_up, color: Colors.white),
-                      onPressed: _isSpeaking ? null : _speakGuide,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          // Main content
-          Expanded(
-            child: GestureDetector(
-              onVerticalDragEnd: (details) {
-                if (details.primaryVelocity != null && details.primaryVelocity! > 0) {
-                  _listen();
-                }
-              },
-              onHorizontalDragEnd: (details) async {
-                if (details.primaryVelocity != null) {
-                  if (details.primaryVelocity! < 0) {
-                    // Swipe left (right-to-left): go back
-                    await flutterTts.stop();
-                    await Future.delayed(const Duration(milliseconds: 200));
-                    await flutterTts.speak("Going back");
-                    await Future.delayed(const Duration(milliseconds: 1500));
-                    await Vibration.vibrate(duration: 100);
-                    Navigator.pop(context);
-                  } else if (details.primaryVelocity! > 0) {
-                    // Swipe right (left-to-right): go to main menu
-                    await flutterTts.stop();
-                    await Future.delayed(const Duration(milliseconds: 200));
-                    await flutterTts.speak("Going to main menu");
-                    await Future.delayed(const Duration(milliseconds: 2500));
-                    await Vibration.vibrate(duration: 100);
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(builder: (context) => HomeScreen()),
-                          (route) => false,
-                    );
-                  }
-                }
-              },
-              child: Container(
-                color: const Color(0xFFF0F4F8), // Light blue-grey background
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          hintText: 'Search for a place or address',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: IconButton(
-                            icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
-                            onPressed: _listen,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey[100],
-                        ),
-                        onTap: () {
-                          setState(() => _suggestions = []);
-                        },
-                        onChanged: (value) {
-                          print('Searching for: $value');
-                          _searchPlaces(value);
-                        },
-                      ),
-                    ),
-                    Expanded(
-                      child: _suggestions.isNotEmpty
-                          ? ListView.builder(
-                        itemCount: _suggestions.length,
-                        itemBuilder: (context, index) {
-                          final suggestion = _suggestions[index];
-                          return ListTile(
-                            leading: const Icon(Icons.location_on),
-                            title: Text(suggestion['name']),
-                            subtitle: Text(suggestion['address']),
-                            onTap: () => _getPlaceDetails(suggestion['place_id']),
-                          );
-                        },
-                      )
-                          : FutureBuilder<List<Map<String, dynamic>>>(
-                        future: _getRecentSearches(),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
-                            return const Center(child: CircularProgressIndicator());
-                          }
-
-                          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                            return const Center(
-                              child: Text(
-                                'No recent searches',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey,
-                                ),
+                      } else if (details.primaryVelocity! > 0) {
+                        // Swipe right (left-to-right): go to main menu
+                        await flutterTts.stop();
+                        await Future.delayed(const Duration(milliseconds: 200));
+                        await flutterTts.speak("Going to main menu");
+                        await Future.delayed(const Duration(milliseconds: 2500));
+                        await Vibration.vibrate(duration: 100);
+                        Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(builder: (context) => HomeScreen()),
+                              (route) => false,
+                        );
+                      }
+                    }
+                  },
+                  child: Container(
+                    color: const Color(0xFFF0F4F8), // Light blue-grey background
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: TextField(
+                            controller: _searchController,
+                            decoration: InputDecoration(
+                              hintText: 'Search for a place or address',
+                              prefixIcon: const Icon(Icons.search),
+                              suffixIcon: IconButton(
+                                icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
+                                onPressed: _listen,
                               ),
-                            );
-                          }
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              filled: true,
+                              fillColor: Colors.grey[100],
+                            ),
+                            onTap: () {
+                              setState(() => _suggestions = []);
+                            },
+                            onChanged: (value) {
+                              print('Searching for: $value');
+                              _searchPlaces(value);
+                            },
+                          ),
+                        ),
+                        Expanded(
+                          child: _suggestions.isNotEmpty
+                              ? ListView.builder(
+                            itemCount: _suggestions.length,
+                            itemBuilder: (context, index) {
+                              final suggestion = _suggestions[index];
+                              return ListTile(
+                                leading: const Icon(Icons.location_on),
+                                title: Text(suggestion['name']),
+                                subtitle: Text(suggestion['address']),
+                                onTap: () => _getPlaceDetails(suggestion['place_id']),
+                              );
+                            },
+                          )
+                              : FutureBuilder<List<Map<String, dynamic>>>(
+                            future: _getRecentSearches(),
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState == ConnectionState.waiting) {
+                                return const Center(child: CircularProgressIndicator());
+                              }
 
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Padding(
-                                padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-                                child: Text(
-                                  'Recent Searches',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
+                              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                                return const Center(
+                                  child: Text(
+                                    'No recent searches',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.grey,
+                                    ),
                                   ),
-                                ),
-                              ),
-                              Expanded(
-                                child: ListView.builder(
-                                  shrinkWrap: true,
-                                  physics: NeverScrollableScrollPhysics(),
-                                  padding: EdgeInsets.zero,
-                                  itemCount: min(4, snapshot.data!.length),
-                                  itemBuilder: (context, index) {
-                                    final search = snapshot.data![index];
-                                    return ListTile(
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                                      leading: const Icon(Icons.history),
-                                      title: Text(search['name']),
-                                      subtitle: Text(search['address']),
-                                      onTap: () async {
-                                        _goToRouteForSuggestion(search);
+                                );
+                              }
+
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Padding(
+                                    padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                                    child: Text(
+                                      'Recent Searches',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: ListView.builder(
+                                      shrinkWrap: true,
+                                      physics: NeverScrollableScrollPhysics(),
+                                      padding: EdgeInsets.zero,
+                                      itemCount: min(4, snapshot.data!.length),
+                                      itemBuilder: (context, index) {
+                                        final search = snapshot.data![index];
+                                        return ListTile(
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                          leading: const Icon(Icons.history),
+                                          title: Text(search['name']),
+                                          subtitle: Text(search['address']),
+                                          onTap: () async {
+                                            _goToRouteForSuggestion(search);
+                                          },
+                                        );
                                       },
-                                    );
-                                  },
-                                ),
-                              ),
-                            ],
-                          );
-                        },
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          // Listening indicator overlay
+          if (_isListening)
+            Positioned(
+              bottom: 20,
+              left: 0,
+              right: 0,
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(25),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.mic,
+                          color: Colors.red,
+                          size: 8,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Listening... Speak now',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -799,6 +854,10 @@ class _SearchDestinationState extends State<SearchDestination> {
 
   void _listen() async {
     if (!_isListening) {
+      // Speak listening indicator before starting
+      await flutterTts.speak("Listening");
+      await Future.delayed(const Duration(milliseconds: 1000));
+
       bool available = await _speech.initialize(
         onStatus: (val) => print('onStatus: $val'),
         onError: (val) => print('onError: $val'),

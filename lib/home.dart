@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:vibration/vibration.dart';
 import 'accountModule/user_profile.dart';
+import 'accountModule/login_page.dart';
+import 'accountModule/auth_gate.dart';
 import 'imageProcessingModule/image_processing_page.dart';
 import 'navigationModule/navigation_page.dart';
 import 'crowdsourcingModule/crowdsourcing_page.dart';
@@ -378,19 +380,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ro
     }
   }
 
-  void _openProfile() {
-    _gestureService.speak('Opening user profile');
-    _pausePageAnnouncements();
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const UserProfileScreen(),
-      ),
-    ).then((_) {
-      // Reinitialize when returning
-      _initializeSystem();
-    });
+  Future<void> _openProfile() async {
+    // Check if user is authenticated
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      // Guest user - directly navigate to login page
+      _gestureService.speak('Please log in to access your profile. Going to main page');
+      _pausePageAnnouncements();
+      await Future.delayed(const Duration(milliseconds: 4000));
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const AuthGate()),
+            (route) => false,
+      );
+    } else {
+      // Authenticated user - proceed normally
+      _gestureService.speak('Opening user profile');
+      _pausePageAnnouncements();
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const UserProfileScreen(),
+        ),
+      ).then((_) {
+        // Reinitialize when returning
+        _initializeSystem();
+      });
+    }
   }
+
 
   Future<void> _confirmPageSelection() async {
     // Determine the most reliable, settled page index

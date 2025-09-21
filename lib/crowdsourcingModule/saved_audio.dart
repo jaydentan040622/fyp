@@ -598,201 +598,202 @@ class _SavedAudioPageState extends State<SavedAudioPage> {
 
         ],
       ),
-      body: Stack(
-        children: [
-          GestureDetector(
-            onHorizontalDragEnd: (details) async {
-              if (details.primaryVelocity != null) {
-                if (details.primaryVelocity! < 0) {
-                  // Swipe left (right-to-left): go back
-                  await flutterTts.stop();
-                  await Future.delayed(const Duration(milliseconds: 200));
-                  await flutterTts.speak("Going back");
-                  await Future.delayed(const Duration(milliseconds: 1500));
-                  await Vibration.vibrate(duration: 100);
-                  Navigator.pop(context);
-                } else if (details.primaryVelocity! > 0) {
-                  // Swipe right (left-to-right): go to main menu
-                  await flutterTts.stop();
-                  await Future.delayed(const Duration(milliseconds: 200));
-                  await flutterTts.speak("Going to main menu");
-                  await Future.delayed(const Duration(milliseconds: 2500));
-                  await Vibration.vibrate(duration: 100);
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (context) => HomeScreen()),
-                        (route) => false,
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragEnd: (details) async {
+          print('Horizontal drag detected with velocity: ${details.primaryVelocity}');
+          if (details.primaryVelocity != null) {
+            if (details.primaryVelocity! < 0) {
+              // Swipe left (right-to-left): go back
+              print('Swipe left detected - going back');
+              await flutterTts.stop();
+              await Future.delayed(const Duration(milliseconds: 200));
+              await flutterTts.speak("Going back");
+              await Future.delayed(const Duration(milliseconds: 1500));
+              await Vibration.vibrate(duration: 100);
+              Navigator.pop(context);
+            } else if (details.primaryVelocity! > 0) {
+              // Swipe right (left-to-right): go to main menu
+              print('Swipe right detected - going to main menu');
+              await flutterTts.stop();
+              await Future.delayed(const Duration(milliseconds: 200));
+              await flutterTts.speak("Going to main menu");
+              await Future.delayed(const Duration(milliseconds: 2500));
+              await Vibration.vibrate(duration: 100);
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => HomeScreen()),
+                    (route) => false,
+              );
+            }
+          }
+        },
+        onLongPress: () async {
+          print('Long press detected - handling voice command');
+          await _handleVoiceCommand();
+        },
+        child: Stack(
+          children: [
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('voice_notes')
+                  .where('email', isEqualTo: user.email)
+                  .orderBy('created_at', descending: true)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  // Speak welcome message for empty state
+                  if (!_hasSpokenWelcome) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _speakEmptyStateWelcome();
+                      _hasSpokenWelcome = true;
+                    });
+                  }
+                  return Container(
+                    width: double.infinity,
+                    height: double.infinity,
+                    color: Colors.transparent,
+                    child: const Center(child: Text('No saved audio found.')),
                   );
                 }
-              }
-            },
-            onLongPress: () async {
-              await _handleVoiceCommand();
-            },
-            child: Container(
-              width: double.infinity,
-              height: double.infinity,
-              color: Colors.transparent,
-            ),
-          ),
-          StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('voice_notes')
-                .where('email', isEqualTo: user.email)
-                .orderBy('created_at', descending: true)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                // Speak welcome message for empty state
+                final docs = snapshot.data!.docs;
+                _fileNames = docs.map<String>((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return data['file_name']?.toString() ?? data['file_path']?.toString() ??
+                      'Unknown';
+                }).toList();
+                _audioData = docs.map<Map<String, dynamic>>((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return data;
+                }).toList();
+                // Speak welcome message only once after data is loaded
                 if (!_hasSpokenWelcome) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _speakEmptyStateWelcome();
+                    _speakCompleteWelcome();
                     _hasSpokenWelcome = true;
                   });
                 }
-                return Container(
-                  width: double.infinity,
-                  height: double.infinity,
-                  child: const Center(child: Text('No saved audio found.')),
-                );
-              }
-              final docs = snapshot.data!.docs;
-              _fileNames = docs.map<String>((doc) {
-                final data = doc.data() as Map<String, dynamic>;
-                return data['file_name']?.toString() ?? data['file_path']?.toString() ??
-                    'Unknown';
-              }).toList();
-              _audioData = docs.map<Map<String, dynamic>>((doc) {
-                final data = doc.data() as Map<String, dynamic>;
-                return data;
-              }).toList();
-              // Speak welcome message only once after data is loaded
-              if (!_hasSpokenWelcome) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _speakCompleteWelcome();
-                  _hasSpokenWelcome = true;
-                });
-              }
-              return ListView.builder(
-                itemCount: docs.length,
-                itemBuilder: (context, index) {
-                  final doc = docs[index];
-                  final data = doc.data() as Map<String, dynamic>;
-                  final fileName = data['file_name'] ?? data['file_path'] ??
-                      'Unknown';
-                  final transcript = data['transcript'] ?? '';
-                  final createdAt = (data['created_at'] as Timestamp?)?.toDate();
-                  return ExpansionTile(
-                    leading: const Icon(Icons.audiotrack, color: Color(0xFF2561FA)),
-                    title: Text(fileName),
-                    subtitle: createdAt != null
-                        ? Text('Created: ${createdAt.toLocal()}')
-                        : null,
-                    trailing: PopupMenuButton<String>(
-                      onSelected: (value) async {
-                        if (value == 'rename') {
-                          await _renameFile(context, doc.id, fileName);
-                        } else if (value == 'delete') {
-                          await _deleteFile(context, doc.id, fileName);
-                        }
-                      },
-                      itemBuilder: (context) =>
-                      [
-                        const PopupMenuItem(
-                          value: 'rename',
-                          child: Text('Rename'),
-                        ),
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Delete'),
-                        ),
+                return ListView.builder(
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    final doc = docs[index];
+                    final data = doc.data() as Map<String, dynamic>;
+                    final fileName = data['file_name'] ?? data['file_path'] ??
+                        'Unknown';
+                    final transcript = data['transcript'] ?? '';
+                    final createdAt = (data['created_at'] as Timestamp?)?.toDate();
+                    return ExpansionTile(
+                      leading: const Icon(Icons.audiotrack, color: Color(0xFF2561FA)),
+                      title: Text(fileName),
+                      subtitle: createdAt != null
+                          ? Text('Created: ${createdAt.toLocal()}')
+                          : null,
+                      trailing: PopupMenuButton<String>(
+                        onSelected: (value) async {
+                          if (value == 'rename') {
+                            await _renameFile(context, doc.id, fileName);
+                          } else if (value == 'delete') {
+                            await _deleteFile(context, doc.id, fileName);
+                          }
+                        },
+                        itemBuilder: (context) =>
+                        [
+                          const PopupMenuItem(
+                            value: 'rename',
+                            child: Text('Rename'),
+                          ),
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Text('Delete'),
+                          ),
+                        ],
+                      ),
+                      children: [
+                        if (transcript.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16.0, vertical: 8.0),
+                            child: Text(
+                              transcript,
+                              style: const TextStyle(fontSize: 16, color: Colors
+                                  .black87),
+                            ),
+                          ),
+                        if (transcript.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 16.0, vertical: 8.0),
+                            child: Text('No transcript available.'),
+                          ),
+                        if (data['audio_url'] != null)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16.0, vertical: 8.0),
+                            child: AudioPlayerWidget(audioUrl: data['audio_url']),
+                          ),
                       ],
-                    ),
+                    );
+                  },
+                );
+              },
+            ),
+            // Remove the status bar and debug overlay
+            // Only show the listening indicator at the bottom when listening
+            if (_isListening)
+              Positioned(
+                bottom: 20,
+                left: 0,
+                right: 0,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(25),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      if (transcript.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16.0, vertical: 8.0),
-                          child: Text(
-                            transcript,
-                            style: const TextStyle(fontSize: 16, color: Colors
-                                .black87),
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Center(
+                          child: Icon(
+                            Icons.mic,
+                            color: Colors.red,
+                            size: 8,
                           ),
                         ),
-                      if (transcript.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(
-                              horizontal: 16.0, vertical: 8.0),
-                          child: Text('No transcript available.'),
+                      ),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Listening... Speak now',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
                         ),
-                      if (data['audio_url'] != null)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16.0, vertical: 8.0),
-                          child: AudioPlayerWidget(audioUrl: data['audio_url']),
-                        ),
+                      ),
                     ],
-                  );
-                },
-              );
-            },
-          ),
-          // Remove the status bar and debug overlay
-          // Only show the listening indicator at the bottom when listening
-          if (_isListening)
-            Positioned(
-              bottom: 20,
-              left: 0,
-              right: 0,
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 20),
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(25),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 12,
-                      height: 12,
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.mic,
-                          color: Colors.red,
-                          size: 8,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'Listening... Speak now',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
