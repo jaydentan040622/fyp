@@ -46,7 +46,7 @@ class _LiveDetectionPageState extends State<LiveDetectionPage> {
   Map<String, dynamic> _lastDetectedObjects = {};
 
   // Gemini API key
-  final String _apiKey = "AIzaSyC_F8UWnADTh8B15lYRcJ5GUJp61p-aBJ"; //w
+  final String _apiKey = "AIzaSyC_F8UWnADTh8B15lYRcJ5GUJp61p-aBJw"; //w
   late GenerativeModel _model;
 
   Timer? _captureTimer;
